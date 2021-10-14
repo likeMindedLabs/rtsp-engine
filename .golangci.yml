@@ -1,0 +1,19 @@
+
+linters:
+  enable:
+  - bodyclose
+  - exportloopref
+  - gochecknoinits
+  - gocritic
+  - gofmt
+  - gofumpt
+  - golint
+  - misspell
+  - lll
+  - prealloc
+  - unconvert
+  disable:
+  - errcheck
+
+issues:
+  exclude-use-default: false
