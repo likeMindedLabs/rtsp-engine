@@ -300,11 +300,12 @@ func (ss *ServerSession) run() {
 						return liberrors.ErrServerSessionTimedOut{}
 					}
 
+					//[PTODA-196]: Commenting this out will stop rtsp-simple-server from stopping sending RTP
+					//packets to Janus
 					// in case of PLAY and UDP, timeout happens when no request arrives
-				case ss.state == ServerSessionStateRead && *ss.setuppedProtocol == base.StreamProtocolUDP:
-					//now := time.Now()
-					fmt.Println("ServerSessionStateRead")
-					/*if now.Sub(ss.lastRequestTime) >= ss.s.closeSessionAfterNoRequestsFor {
+					/*case ss.state == ServerSessionStateRead && *ss.setuppedProtocol == base.StreamProtocolUDP:
+					now := time.Now()
+					if now.Sub(ss.lastRequestTime) >= ss.s.closeSessionAfterNoRequestsFor {
 						return liberrors.ErrServerSessionTimedOut{}
 					}*/
 
