@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/aler9/gortsplib"
+	gortsplib "github.com/likeMindedLabs/rtsp-engine"
 )
 
 // This example shows how to

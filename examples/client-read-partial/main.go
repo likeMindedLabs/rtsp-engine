@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/aler9/gortsplib"
-	"github.com/aler9/gortsplib/pkg/base"
-	"github.com/aler9/gortsplib/pkg/headers"
+	gortsplib "github.com/likeMindedLabs/rtsp-engine"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
 )
 
 // This example shows how to

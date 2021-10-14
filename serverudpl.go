@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/net/ipv4"
 
-	"github.com/aler9/gortsplib/pkg/multibuffer"
-	"github.com/aler9/gortsplib/pkg/ringbuffer"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/multibuffer"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/ringbuffer"
 )
 
 const (

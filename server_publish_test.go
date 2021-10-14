@@ -14,8 +14,8 @@ import (
 	psdp "github.com/pion/sdp/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/aler9/gortsplib/pkg/base"
-	"github.com/aler9/gortsplib/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
 )
 
 func TestServerPublishErrorAnnounce(t *testing.T) {

@@ -2,7 +2,7 @@
 Package gortsplib is a RTSP 1.0 library for the Go programming language,
 written for rtsp-simple-server.
 
-Examples are available at https://github.com/aler9/gortsplib/tree/master/examples
+Examples are available at https://github.com/likeMindedLabs/rtsp-engine/tree/master/examples
 
 */
 package gortsplib
@@ -13,8 +13,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/aler9/gortsplib/pkg/base"
-	"github.com/aler9/gortsplib/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
 )
 
 // DefaultClient is the default Client.

@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/ipv4"
 
-	"github.com/aler9/gortsplib/pkg/auth"
-	"github.com/aler9/gortsplib/pkg/base"
-	"github.com/aler9/gortsplib/pkg/headers"
-	"github.com/aler9/gortsplib/pkg/rtcpsender"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/auth"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/rtcpsender"
 )
 
 func TestClientReadTracks(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/aler9/gortsplib"
-	"github.com/aler9/gortsplib/pkg/base"
+	gortsplib "github.com/likeMindedLabs/rtsp-engine"
+	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
 )
 
 // This example shows how to
