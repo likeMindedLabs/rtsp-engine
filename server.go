@@ -88,6 +88,8 @@ type Server struct {
 	// a port to send and receive RTCP packets with UDP.
 	// If UDPRTPAddress and UDPRTCPAddress are filled, the server can read and write UDP streams.
 	UDPRTCPAddress string
+	// Enables a timeout after 60 seconds that closes the rtsp session if no receiver reports are received
+	UDPEnableTimeout bool
 	// a range of multicast IPs to use.
 	// If MulticastIPRange, MulticastRTPPort, MulticastRTCPPort are filled, the server
 	// can read and write UDP-multicast streams.

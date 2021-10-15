@@ -135,6 +135,7 @@ type ServerSession struct {
 	setuppedStream          *ServerStream // read
 	setuppedPath            *string
 	setuppedQuery           *string
+	udpEnableTimeout        bool //Enables udp play timeout
 	lastRequestTime         time.Time
 	tcpConn                 *ServerConn                   // tcp
 	announcedTracks         []ServerSessionAnnouncedTrack // publish
@@ -153,15 +154,16 @@ func newServerSession(
 	ctx, ctxCancel := context.WithCancel(s.ctx)
 
 	ss := &ServerSession{
-		s:               s,
-		secretID:        secretID,
-		author:          author,
-		ctx:             ctx,
-		ctxCancel:       ctxCancel,
-		conns:           make(map[*ServerConn]struct{}),
-		lastRequestTime: time.Now(),
-		request:         make(chan sessionRequestReq),
-		connRemove:      make(chan *ServerConn),
+		s:                s,
+		secretID:         secretID,
+		author:           author,
+		ctx:              ctx,
+		udpEnableTimeout: s.UDPEnableTimeout,
+		ctxCancel:        ctxCancel,
+		conns:            make(map[*ServerConn]struct{}),
+		lastRequestTime:  time.Now(),
+		request:          make(chan sessionRequestReq),
+		connRemove:       make(chan *ServerConn),
 	}
 
 	s.wg.Add(1)
@@ -300,15 +302,15 @@ func (ss *ServerSession) run() {
 						return liberrors.ErrServerSessionTimedOut{}
 					}
 
-					//[PTODA-196]: Commenting this out will stop rtsp-simple-server from stopping sending RTP
-					//packets to Janus
-					// in case of PLAY and UDP, timeout happens when no request arrives
-					/*case ss.state == ServerSessionStateRead && *ss.setuppedProtocol == base.StreamProtocolUDP:
-					now := time.Now()
-					if now.Sub(ss.lastRequestTime) >= ss.s.closeSessionAfterNoRequestsFor {
-						return liberrors.ErrServerSessionTimedOut{}
-					}*/
-
+				//[PTODA-196]: This code stops the connection if no receiver reports are received
+				// in case of PLAY and UDP, timeout happens when no request arrives
+				case ss.state == ServerSessionStateRead && *ss.setuppedProtocol == base.StreamProtocolUDP:
+					if ss.udpEnableTimeout {
+						now := time.Now()
+						if now.Sub(ss.lastRequestTime) >= ss.s.closeSessionAfterNoRequestsFor {
+							return liberrors.ErrServerSessionTimedOut{}
+						}
+					}
 					// otherwise, there's no timeout until all associated connections are closed
 				}
 
