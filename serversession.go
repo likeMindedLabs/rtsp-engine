@@ -281,15 +281,9 @@ func (ss *ServerSession) run() {
 					}
 				}
 
-				// if session is not in state RECORD or PLAY, or protocol is TCP
-				if (ss.state != ServerSessionStatePublish &&
-					ss.state != ServerSessionStateRead) ||
-					*ss.setuppedProtocol == base.StreamProtocolTCP {
-
-					// close if there are no active connections
-					if len(ss.conns) == 0 {
-						return liberrors.ErrServerSessionTeardown{}
-					}
+				// close if there are no active connections
+				if len(ss.conns) == 0 {
+					return liberrors.ErrServerSessionTeardown{}
 				}
 
 			case <-checkTimeoutTicker.C:
