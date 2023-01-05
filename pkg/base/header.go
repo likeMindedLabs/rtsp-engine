@@ -97,7 +97,7 @@ func (h *Header) read(rb *bufio.Reader) error {
 	return nil
 }
 
-func (h Header) write(wb *bufio.Writer) error {
+func (h Header) marshalSize() int {
 	// sort headers by key
 	// in order to obtain deterministic results
 	keys := make([]string, len(h))
@@ -106,19 +106,43 @@ func (h Header) write(wb *bufio.Writer) error {
 	}
 	sort.Strings(keys)
 
+	n := 0
+
 	for _, key := range keys {
 		for _, val := range h[key] {
-			_, err := wb.Write([]byte(key + ": " + val + "\r\n"))
-			if err != nil {
-				return err
-			}
+			n += len([]byte(key + ": " + val + "\r\n"))
 		}
 	}
 
-	_, err := wb.Write([]byte("\r\n"))
-	if err != nil {
-		return err
+	n += 2
+
+	return n
+}
+
+func (h Header) marshalTo(buf []byte) int {
+	// sort headers by key
+	// in order to obtain deterministic results
+	keys := make([]string, len(h))
+	for key := range h {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	pos := 0
+
+	for _, key := range keys {
+		for _, val := range h[key] {
+			pos += copy(buf[pos:], []byte(key+": "+val+"\r\n"))
+		}
 	}
 
-	return nil
+	pos += copy(buf[pos:], []byte("\r\n"))
+
+	return pos
+}
+
+func (h Header) marshal() []byte {
+	buf := make([]byte, h.marshalSize())
+	h.marshalTo(buf)
+	return buf
 }

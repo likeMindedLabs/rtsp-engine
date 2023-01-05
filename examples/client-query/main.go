@@ -1,37 +1,34 @@
 package main
 
 import (
-	"fmt"
+	"log"
 
-	gortsplib "github.com/likeMindedLabs/rtsp-engine"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/url"
 )
 
 // This example shows how to
 // 1. connect to a RTSP server
-// 2. get and print informations about tracks published on a path.
+// 2. get and print informations about medias published on a path.
 
 func main() {
-	u, err := base.ParseURL("rtsp://myserver/mypath")
+	c := rtsp-engine.Client{}
+
+	u, err := url.Parse("rtsp://localhost:8554/mypath")
 	if err != nil {
 		panic(err)
 	}
 
-	conn, err := gortsplib.Dial(u.Scheme, u.Host)
+	err = c.Start(u.Scheme, u.Host)
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	defer c.Close()
 
-	_, err = conn.Options(u)
-	if err != nil {
-		panic(err)
-	}
-
-	tracks, _, _, err := conn.Describe(u)
+	medias, _, _, err := c.Describe(u)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("available tracks: %v\n", tracks)
+	log.Printf("available medias: %v\n", medias)
 }

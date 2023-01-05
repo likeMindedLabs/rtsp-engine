@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
 )
 
 func TestValidatorErrors(t *testing.T) {
@@ -65,7 +65,7 @@ func TestValidatorErrors(t *testing.T) {
 					"Authorization": ca.hv,
 				},
 			}, nil)
-			require.Equal(t, ca.err, err.Error())
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }

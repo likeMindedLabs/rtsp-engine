@@ -2,72 +2,26 @@ package base
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
 	"io"
 )
 
 const (
-	interleavedFrameMagicByte = 0x24
+	// InterleavedFrameMagicByte is the first byte of an interleaved frame.
+	InterleavedFrameMagicByte = 0x24
 )
-
-// ReadInterleavedFrameOrRequest reads an InterleavedFrame or a Response.
-func ReadInterleavedFrameOrRequest(frame *InterleavedFrame, req *Request, br *bufio.Reader) (interface{}, error) {
-	b, err := br.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	br.UnreadByte()
-
-	if b == interleavedFrameMagicByte {
-		err := frame.Read(br)
-		if err != nil {
-			return nil, err
-		}
-		return frame, err
-	}
-
-	err = req.Read(br)
-	if err != nil {
-		return nil, err
-	}
-	return req, nil
-}
-
-// ReadInterleavedFrameOrResponse reads an InterleavedFrame or a Response.
-func ReadInterleavedFrameOrResponse(frame *InterleavedFrame, res *Response, br *bufio.Reader) (interface{}, error) {
-	b, err := br.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	br.UnreadByte()
-
-	if b == interleavedFrameMagicByte {
-		err := frame.Read(br)
-		if err != nil {
-			return nil, err
-		}
-		return frame, err
-	}
-
-	err = res.Read(br)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
 
 // InterleavedFrame is an interleaved frame, and allows to transfer binary data
 // within RTSP/TCP connections. It is used to send and receive RTP and RTCP packets with TCP.
 type InterleavedFrame struct {
-	// channel id
+	// channel ID
 	Channel int
 
-	// frame payload
+	// payload
 	Payload []byte
 }
 
-// Read reads an interleaved frame.
+// Read decodes an interleaved frame.
 func (f *InterleavedFrame) Read(br *bufio.Reader) error {
 	var header [4]byte
 	_, err := io.ReadFull(br, header[:])
@@ -75,18 +29,15 @@ func (f *InterleavedFrame) Read(br *bufio.Reader) error {
 		return err
 	}
 
-	if header[0] != interleavedFrameMagicByte {
+	if header[0] != InterleavedFrameMagicByte {
 		return fmt.Errorf("invalid magic byte (0x%.2x)", header[0])
 	}
 
-	framelen := int(binary.BigEndian.Uint16(header[2:]))
-	if framelen > len(f.Payload) {
-		return fmt.Errorf("payload size greater than maximum allowed (%d vs %d)",
-			framelen, len(f.Payload))
-	}
+	// it's useless to check payloadLen since it's limited to 65535
+	payloadLen := int(uint16(header[2])<<8 | uint16(header[3]))
 
 	f.Channel = int(header[1])
-	f.Payload = f.Payload[:framelen]
+	f.Payload = make([]byte, payloadLen)
 
 	_, err = io.ReadFull(br, f.Payload)
 	if err != nil {
@@ -95,20 +46,30 @@ func (f *InterleavedFrame) Read(br *bufio.Reader) error {
 	return nil
 }
 
-// Write writes an InterleavedFrame into a buffered writer.
-func (f InterleavedFrame) Write(bw *bufio.Writer) error {
-	buf := []byte{0x24, byte(f.Channel), 0x00, 0x00}
-	binary.BigEndian.PutUint16(buf[2:], uint16(len(f.Payload)))
+// MarshalSize returns the size of an InterleavedFrame.
+func (f InterleavedFrame) MarshalSize() int {
+	return 4 + len(f.Payload)
+}
 
-	_, err := bw.Write(buf)
-	if err != nil {
-		return err
-	}
+// MarshalTo writes an InterleavedFrame.
+func (f InterleavedFrame) MarshalTo(buf []byte) (int, error) {
+	pos := 0
 
-	_, err = bw.Write(f.Payload)
-	if err != nil {
-		return err
-	}
+	pos += copy(buf[pos:], []byte{0x24, byte(f.Channel)})
 
-	return bw.Flush()
+	payloadLen := len(f.Payload)
+	buf[pos] = byte(payloadLen >> 8)
+	buf[pos+1] = byte(payloadLen)
+	pos += 2
+
+	pos += copy(buf[pos:], f.Payload)
+
+	return pos, nil
+}
+
+// Marshal writes an InterleavedFrame.
+func (f InterleavedFrame) Marshal() ([]byte, error) {
+	buf := make([]byte, f.MarshalSize())
+	_, err := f.MarshalTo(buf)
+	return buf, err
 }

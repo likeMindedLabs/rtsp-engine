@@ -2,12 +2,15 @@ package main
 
 import (
 	"crypto/tls"
-	"fmt"
 	"log"
 	"sync"
 
-	gortsplib "github.com/likeMindedLabs/rtsp-engine"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/pion/rtp"
+
+	"github.com/likeMindedLabs/rtsp-engine/v2"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/format"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/media"
 )
 
 // This example shows how to
@@ -17,41 +20,42 @@ import (
 
 type serverHandler struct {
 	mutex     sync.Mutex
-	stream    *gortsplib.ServerStream
-	publisher *gortsplib.ServerSession
+	stream    *rtsp-engine.ServerStream
+	publisher *rtsp-engine.ServerSession
 }
 
-// called after a connection is opened.
-func (sh *serverHandler) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
+// called when a connection is opened.
+func (sh *serverHandler) OnConnOpen(ctx *rtsp-engine.ServerHandlerOnConnOpenCtx) {
 	log.Printf("conn opened")
 }
 
-// called after a connection is closed.
-func (sh *serverHandler) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
+// called when a connection is closed.
+func (sh *serverHandler) OnConnClose(ctx *rtsp-engine.ServerHandlerOnConnCloseCtx) {
 	log.Printf("conn closed (%v)", ctx.Error)
 }
 
-// called after a session is opened.
-func (sh *serverHandler) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
+// called when a session is opened.
+func (sh *serverHandler) OnSessionOpen(ctx *rtsp-engine.ServerHandlerOnSessionOpenCtx) {
 	log.Printf("session opened")
 }
 
-// called after a session is closed.
-func (sh *serverHandler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
+// called when a session is closed.
+func (sh *serverHandler) OnSessionClose(ctx *rtsp-engine.ServerHandlerOnSessionCloseCtx) {
 	log.Printf("session closed")
 
 	sh.mutex.Lock()
 	defer sh.mutex.Unlock()
 
-	// close stream-related listeners and disconnect every reader
+	// if the session is the publisher,
+	// close the stream and disconnect any reader.
 	if sh.stream != nil && ctx.Session == sh.publisher {
 		sh.stream.Close()
 		sh.stream = nil
 	}
 }
 
-// called after receiving a DESCRIBE request.
-func (sh *serverHandler) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
+// called when receiving a DESCRIBE request.
+func (sh *serverHandler) OnDescribe(ctx *rtsp-engine.ServerHandlerOnDescribeCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
 	log.Printf("describe request")
 
 	sh.mutex.Lock()
@@ -64,25 +68,27 @@ func (sh *serverHandler) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (
 		}, nil, nil
 	}
 
+	// send medias that are being published to the client
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, sh.stream, nil
 }
 
-// called after receiving an ANNOUNCE request.
-func (sh *serverHandler) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+// called when receiving an ANNOUNCE request.
+func (sh *serverHandler) OnAnnounce(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
 	log.Printf("announce request")
 
 	sh.mutex.Lock()
 	defer sh.mutex.Unlock()
 
+	// disconnect existing publisher
 	if sh.stream != nil {
-		return &base.Response{
-			StatusCode: base.StatusBadRequest,
-		}, fmt.Errorf("someone is already publishing")
+		sh.stream.Close()
+		sh.publisher.Close()
 	}
 
-	sh.stream = gortsplib.NewServerStream(ctx.Tracks)
+	// create the stream and save the publisher
+	sh.stream = rtsp-engine.NewServerStream(ctx.Medias)
 	sh.publisher = ctx.Session
 
 	return &base.Response{
@@ -90,8 +96,8 @@ func (sh *serverHandler) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (
 	}, nil
 }
 
-// called after receiving a SETUP request.
-func (sh *serverHandler) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
+// called when receiving a SETUP request.
+func (sh *serverHandler) OnSetup(ctx *rtsp-engine.ServerHandlerOnSetupCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
 	log.Printf("setup request")
 
 	// no one is publishing yet
@@ -106,8 +112,8 @@ func (sh *serverHandler) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.
 	}, sh.stream, nil
 }
 
-// called after receiving a PLAY request.
-func (sh *serverHandler) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
+// called when receiving a PLAY request.
+func (sh *serverHandler) OnPlay(ctx *rtsp-engine.ServerHandlerOnPlayCtx) (*base.Response, error) {
 	log.Printf("play request")
 
 	return &base.Response{
@@ -115,24 +121,19 @@ func (sh *serverHandler) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Re
 	}, nil
 }
 
-// called after receiving a RECORD request.
-func (sh *serverHandler) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
+// called when receiving a RECORD request.
+func (sh *serverHandler) OnRecord(ctx *rtsp-engine.ServerHandlerOnRecordCtx) (*base.Response, error) {
 	log.Printf("record request")
+
+	// called when receiving a RTP packet
+	ctx.Session.OnPacketRTPAny(func(medi *media.Media, forma format.Format, pkt *rtp.Packet) {
+		// route the RTP packet to all readers
+		sh.stream.WritePacketRTP(medi, pkt)
+	})
 
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, nil
-}
-
-// called after receiving a frame.
-func (sh *serverHandler) OnFrame(ctx *gortsplib.ServerHandlerOnFrameCtx) {
-	sh.mutex.Lock()
-	defer sh.mutex.Unlock()
-
-	// if we are the publisher, route frames to readers
-	if ctx.Session == sh.publisher {
-		sh.stream.WriteFrame(ctx.TrackID, ctx.StreamType, ctx.Payload)
-	}
 }
 
 func main() {
@@ -145,12 +146,13 @@ func main() {
 	}
 
 	// configure server
-	s := &gortsplib.Server{
-		Handler:   &serverHandler{},
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+	s := &rtsp-engine.Server{
+		Handler:     &serverHandler{},
+		TLSConfig:   &tls.Config{Certificates: []tls.Certificate{cert}},
+		RTSPAddress: ":8322",
 	}
 
 	// start server and wait until a fatal error
 	log.Printf("server is ready")
-	panic(s.StartAndWait(":8554"))
+	panic(s.StartAndWait())
 }

@@ -1,11 +1,12 @@
-// Package base contains the base elements of the RTSP protocol.
+// Package base contains the primitives of the RTSP protocol.
 package base
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"strconv"
+
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/url"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 // Method is the method of a RTSP request.
 type Method string
 
-// standard methods
+// methods.
 const (
 	Announce     Method = "ANNOUNCE"
 	Describe     Method = "DESCRIBE"
@@ -38,7 +39,7 @@ type Request struct {
 	Method Method
 
 	// request url
-	URL *URL
+	URL *url.URL
 
 	// map of header values
 	Header Header
@@ -65,7 +66,7 @@ func (req *Request) Read(rb *bufio.Reader) error {
 	}
 	rawURL := string(byts[:len(byts)-1])
 
-	ur, err := ParseURL(rawURL)
+	ur, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL (%v)", rawURL)
 	}
@@ -75,10 +76,10 @@ func (req *Request) Read(rb *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	proto := string(byts[:len(byts)-1])
+	proto := byts[:len(byts)-1]
 
-	if proto != rtspProtocol10 {
-		return fmt.Errorf("expected '%s', got '%s'", rtspProtocol10, proto)
+	if string(proto) != rtspProtocol10 {
+		return fmt.Errorf("expected '%s', got %v", rtspProtocol10, proto)
 	}
 
 	err = readByteEqual(rb, '\n')
@@ -99,55 +100,51 @@ func (req *Request) Read(rb *bufio.Reader) error {
 	return nil
 }
 
-// ReadIgnoreFrames reads a request and ignores any interleaved frame sent
-// before the request.
-func (req *Request) ReadIgnoreFrames(rb *bufio.Reader, buf []byte) error {
-	buflen := len(buf)
-	f := InterleavedFrame{
-		Payload: buf,
-	}
+// MarshalSize returns the size of a Request.
+func (req Request) MarshalSize() int {
+	n := 0
 
-	for {
-		f.Payload = f.Payload[:buflen]
-		recv, err := ReadInterleavedFrameOrRequest(&f, req, rb)
-		if err != nil {
-			return err
-		}
-
-		if _, ok := recv.(*Request); ok {
-			return nil
-		}
-	}
-}
-
-// Write writes a request.
-func (req Request) Write(bw *bufio.Writer) error {
 	urStr := req.URL.CloneWithoutCredentials().String()
-	_, err := bw.Write([]byte(string(req.Method) + " " + urStr + " " + rtspProtocol10 + "\r\n"))
-	if err != nil {
-		return err
-	}
+	n += len([]byte(string(req.Method) + " " + urStr + " " + rtspProtocol10 + "\r\n"))
 
 	if len(req.Body) != 0 {
 		req.Header["Content-Length"] = HeaderValue{strconv.FormatInt(int64(len(req.Body)), 10)}
 	}
 
-	err = req.Header.write(bw)
-	if err != nil {
-		return err
+	n += req.Header.marshalSize()
+
+	n += body(req.Body).marshalSize()
+
+	return n
+}
+
+// MarshalTo writes a Request.
+func (req Request) MarshalTo(buf []byte) (int, error) {
+	pos := 0
+
+	urStr := req.URL.CloneWithoutCredentials().String()
+	pos += copy(buf[pos:], []byte(string(req.Method)+" "+urStr+" "+rtspProtocol10+"\r\n"))
+
+	if len(req.Body) != 0 {
+		req.Header["Content-Length"] = HeaderValue{strconv.FormatInt(int64(len(req.Body)), 10)}
 	}
 
-	err = body(req.Body).write(bw)
-	if err != nil {
-		return err
-	}
+	pos += req.Header.marshalTo(buf[pos:])
 
-	return bw.Flush()
+	pos += body(req.Body).marshalTo(buf[pos:])
+
+	return pos, nil
+}
+
+// Marshal writes a Request.
+func (req Request) Marshal() ([]byte, error) {
+	buf := make([]byte, req.MarshalSize())
+	_, err := req.MarshalTo(buf)
+	return buf, err
 }
 
 // String implements fmt.Stringer.
 func (req Request) String() string {
-	buf := bytes.NewBuffer(nil)
-	req.Write(bufio.NewWriter(buf))
-	return buf.String()
+	buf, _ := req.Marshal()
+	return string(buf)
 }

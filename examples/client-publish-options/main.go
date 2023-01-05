@@ -1,18 +1,20 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net"
 	"time"
 
-	gortsplib "github.com/likeMindedLabs/rtsp-engine"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/rtph264"
+	"github.com/likeMindedLabs/rtsp-engine/v2"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/format"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/media"
+	"github.com/pion/rtp"
 )
 
 // This example shows how to
 // 1. set additional client options
-// 2. generate RTP/H264 frames from a file with Gstreamer
-// 3. connect to a RTSP server, announce an H264 track
+// 2. generate RTP/H264 frames from a file with GStreamer
+// 3. connect to a RTSP server, announce an H264 media
 // 4. write the frames to the server
 
 func main() {
@@ -23,52 +25,60 @@ func main() {
 	}
 	defer pc.Close()
 
-	fmt.Println("Waiting for a rtp/h264 stream on port 9000 - you can send one with gstreamer:\n" +
+	log.Println("Waiting for a RTP/H264 stream on port 9000 - you can send one with GStreamer:\n" +
 		"gst-launch-1.0 filesrc location=video.mp4 ! qtdemux ! video/x-h264" +
 		" ! h264parse config-interval=1 ! rtph264pay ! udpsink host=127.0.0.1 port=9000")
 
-	// get SPS and PPS
-	decoder := rtph264.NewDecoder()
-	sps, pps, err := decoder.ReadSPSPPS(rtph264.PacketConnReader{pc})
+	// wait for first packet
+	buf := make([]byte, 2048)
+	n, _, err := pc.ReadFrom(buf)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("stream connected")
+	log.Println("stream connected")
 
-	// create an H264 track
-	track, err := gortsplib.NewTrackH264(96, &gortsplib.TrackConfigH264{sps, pps})
-	if err != nil {
-		panic(err)
-	}
+	// create a media that contains a H264 media
+	medias := media.Medias{&media.Media{
+		Type: media.TypeVideo,
+		Formats: []format.Format{&format.H264{
+			PayloadTyp:        96,
+			PacketizationMode: 1,
+		}},
+	}}
 
 	// Client allows to set additional client options
-	c := &gortsplib.Client{
-		// the stream protocol (UDP or TCP). If nil, it is chosen automatically
-		Protocol: nil,
+	c := &rtsp-engine.Client{
+		// the stream transport (UDP or TCP). If nil, it is chosen automatically
+		Transport: nil,
 		// timeout of read operations
 		ReadTimeout: 10 * time.Second,
 		// timeout of write operations
 		WriteTimeout: 10 * time.Second,
 	}
 
-	// connect to the server and start publishing the track
-	conn, err := c.DialPublish("rtsp://localhost:8554/mystream",
-		gortsplib.Tracks{track})
+	// connect to the server and start recording the media
+	err = c.StartRecording("rtsp://localhost:8554/mystream", medias)
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	defer c.Close()
 
-	buf := make([]byte, 2048)
+	var pkt rtp.Packet
 	for {
-		// read RTP packets from the source
-		n, _, err := pc.ReadFrom(buf)
+		// parse RTP packet
+		err = pkt.Unmarshal(buf[:n])
 		if err != nil {
 			panic(err)
 		}
 
-		// write RTP packets
-		err = conn.WriteFrame(0, gortsplib.StreamTypeRTP, buf[:n])
+		// route RTP packet to the server
+		err = c.WritePacketRTP(medias[0], &pkt)
+		if err != nil {
+			panic(err)
+		}
+
+		// read another RTP packet from source
+		n, _, err = pc.ReadFrom(buf)
 		if err != nil {
 			panic(err)
 		}

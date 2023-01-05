@@ -5,12 +5,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/url"
 )
 
-func mustParseURL(s string) *base.URL {
-	u, err := base.ParseURL(s)
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +93,7 @@ func TestAuth(t *testing.T) {
 func TestAuthVLC(t *testing.T) {
 	for _, ca := range []struct {
 		clientURL string
-		serverURL string
+		mediaURL  string
 	}{
 		{
 			"rtsp://myhost/mypath/",
@@ -110,15 +111,17 @@ func TestAuthVLC(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &base.Request{
-			Method: base.Announce,
+			Method: base.Setup,
 			URL:    mustParseURL(ca.clientURL),
 		}
 		se.AddAuthorization(req)
-
-		req.URL = mustParseURL(ca.serverURL)
+		req.URL = mustParseURL(ca.mediaURL)
 
 		err = va.ValidateRequest(req, mustParseURL(ca.clientURL))
 		require.NoError(t, err)
+
+		err = va.ValidateRequest(req, mustParseURL("rtsp://invalid"))
+		require.Error(t, err)
 	}
 }
 

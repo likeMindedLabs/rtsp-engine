@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var casesHeader = []struct {
+var cases = []struct {
 	name   string
 	dec    []byte
 	enc    []byte
@@ -106,25 +106,12 @@ var casesHeader = []struct {
 }
 
 func TestHeaderRead(t *testing.T) {
-	for _, ca := range casesHeader {
+	for _, ca := range cases {
 		t.Run(ca.name, func(t *testing.T) {
 			h := make(Header)
 			err := h.read(bufio.NewReader(bytes.NewBuffer(ca.dec)))
 			require.NoError(t, err)
 			require.Equal(t, ca.header, h)
-		})
-	}
-}
-
-func TestHeaderWrite(t *testing.T) {
-	for _, ca := range casesHeader {
-		t.Run(ca.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			bw := bufio.NewWriter(&buf)
-			err := ca.header.write(bw)
-			require.NoError(t, err)
-			bw.Flush()
-			require.Equal(t, ca.enc, buf.Bytes())
 		})
 	}
 }
@@ -181,31 +168,16 @@ func TestHeaderReadErrors(t *testing.T) {
 		t.Run(ca.name, func(t *testing.T) {
 			h := make(Header)
 			err := h.read(bufio.NewReader(bytes.NewBuffer(ca.dec)))
-			require.Equal(t, ca.err, err.Error())
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }
 
-func TestHeaderWriteErrors(t *testing.T) {
-	for _, ca := range []struct {
-		name string
-		cap  int
-	}{
-		{
-			"values",
-			3,
-		},
-		{
-			"final newline",
-			12,
-		},
-	} {
+func TestHeaderWrite(t *testing.T) {
+	for _, ca := range cases {
 		t.Run(ca.name, func(t *testing.T) {
-			bw := bufio.NewWriterSize(&limitedBuffer{cap: ca.cap}, 1)
-			err := Header{
-				"Value": HeaderValue{"key"},
-			}.write(bw)
-			require.Equal(t, "capacity reached", err.Error())
+			buf := ca.header.marshal()
+			require.Equal(t, ca.enc, buf)
 		})
 	}
 }

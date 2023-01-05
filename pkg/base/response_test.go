@@ -105,19 +105,6 @@ func TestResponseRead(t *testing.T) {
 	}
 }
 
-func TestResponseWrite(t *testing.T) {
-	for _, c := range casesResponse {
-		t.Run(c.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			bw := bufio.NewWriter(&buf)
-			err := c.res.Write(bw)
-			require.NoError(t, err)
-			// do NOT call flush(), write() must have already done it
-			require.Equal(t, c.byts, buf.Bytes())
-		})
-	}
-}
-
 func TestResponseReadErrors(t *testing.T) {
 	for _, ca := range []struct {
 		name string
@@ -152,7 +139,7 @@ func TestResponseReadErrors(t *testing.T) {
 		{
 			"invalid protocol",
 			[]byte("RTSP/2.0 200 OK\r\n"),
-			"expected 'RTSP/1.0', got 'RTSP/2.0'",
+			"expected 'RTSP/1.0', got [82 84 83 80 47 50 46 48]",
 		},
 		{
 			"code too long",
@@ -183,45 +170,22 @@ func TestResponseReadErrors(t *testing.T) {
 		t.Run(ca.name, func(t *testing.T) {
 			var res Response
 			err := res.Read(bufio.NewReader(bytes.NewBuffer(ca.byts)))
-			require.Equal(t, ca.err, err.Error())
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }
 
-func TestResponseWriteErrors(t *testing.T) {
-	for _, ca := range []struct {
-		name string
-		cap  int
-	}{
-		{
-			"first line",
-			14,
-		},
-		{
-			"header",
-			21,
-		},
-		{
-			"body",
-			49,
-		},
-	} {
-		t.Run(ca.name, func(t *testing.T) {
-			bw := bufio.NewWriterSize(&limitedBuffer{cap: ca.cap}, 1)
-			err := Response{
-				StatusCode:    200,
-				StatusMessage: "OK",
-				Header: Header{
-					"CSeq": HeaderValue{"2"},
-				},
-				Body: []byte("abc"),
-			}.Write(bw)
-			require.Equal(t, "capacity reached", err.Error())
+func TestResponseMarshal(t *testing.T) {
+	for _, c := range casesResponse {
+		t.Run(c.name, func(t *testing.T) {
+			buf, err := c.res.Marshal()
+			require.NoError(t, err)
+			require.Equal(t, c.byts, buf)
 		})
 	}
 }
 
-func TestResponseWriteAutoFillStatus(t *testing.T) {
+func TestResponseMarshalAutoFillStatus(t *testing.T) {
 	res := &Response{
 		StatusCode: StatusMethodNotAllowed,
 		Header: Header{
@@ -243,35 +207,9 @@ func TestResponseWriteAutoFillStatus(t *testing.T) {
 		"\r\n",
 	)
 
-	var buf bytes.Buffer
-	bw := bufio.NewWriter(&buf)
-	err := res.Write(bw)
+	buf, err := res.Marshal()
 	require.NoError(t, err)
-	require.Equal(t, byts, buf.Bytes())
-}
-
-func TestResponseReadIgnoreFrames(t *testing.T) {
-	byts := []byte{0x24, 0x6, 0x0, 0x4, 0x1, 0x2, 0x3, 0x4}
-	byts = append(byts, []byte("RTSP/1.0 200 OK\r\n"+
-		"CSeq: 1\r\n"+
-		"Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n"+
-		"\r\n")...)
-
-	rb := bufio.NewReader(bytes.NewBuffer(byts))
-	buf := make([]byte, 10)
-	var res Response
-	err := res.ReadIgnoreFrames(rb, buf)
-	require.NoError(t, err)
-}
-
-func TestResponseReadIgnoreFramesErrors(t *testing.T) {
-	byts := []byte{0x25}
-
-	rb := bufio.NewReader(bytes.NewBuffer(byts))
-	buf := make([]byte, 10)
-	var res Response
-	err := res.ReadIgnoreFrames(rb, buf)
-	require.Equal(t, "EOF", err.Error())
+	require.Equal(t, byts, buf)
 }
 
 func TestResponseString(t *testing.T) {
