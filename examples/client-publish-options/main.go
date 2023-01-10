@@ -47,7 +47,7 @@ func main() {
 	}}
 
 	// Client allows to set additional client options
-	c := &rtsp-engine.Client{
+	c := &gortsplib.Client{
 		// the stream transport (UDP or TCP). If nil, it is chosen automatically
 		Transport: nil,
 		// timeout of read operations

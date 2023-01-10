@@ -1,4 +1,4 @@
-package rtsp-engine
+package gortsplib
 
 import (
 	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"

@@ -1,4 +1,4 @@
-package rtsp-engine
+package gortsplib
 
 // Transport is a RTSP transport protocol.
 type Transport int

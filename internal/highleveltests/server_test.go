@@ -78,94 +78,94 @@ NkxNic7oHgsZpIkZ8HK+QjAAWA==
 `)
 
 type testServerHandler struct {
-	onConnOpen     func(*rtsp-engine.ServerHandlerOnConnOpenCtx)
-	onConnClose    func(*rtsp-engine.ServerHandlerOnConnCloseCtx)
-	onSessionOpen  func(*rtsp-engine.ServerHandlerOnSessionOpenCtx)
-	onSessionClose func(*rtsp-engine.ServerHandlerOnSessionCloseCtx)
-	onDescribe     func(*rtsp-engine.ServerHandlerOnDescribeCtx) (*base.Response, *rtsp-engine.ServerStream, error)
-	onAnnounce     func(*rtsp-engine.ServerHandlerOnAnnounceCtx) (*base.Response, error)
-	onSetup        func(*rtsp-engine.ServerHandlerOnSetupCtx) (*base.Response, *rtsp-engine.ServerStream, error)
-	onPlay         func(*rtsp-engine.ServerHandlerOnPlayCtx) (*base.Response, error)
-	onRecord       func(*rtsp-engine.ServerHandlerOnRecordCtx) (*base.Response, error)
-	onPause        func(*rtsp-engine.ServerHandlerOnPauseCtx) (*base.Response, error)
-	onSetParameter func(*rtsp-engine.ServerHandlerOnSetParameterCtx) (*base.Response, error)
-	onGetParameter func(*rtsp-engine.ServerHandlerOnGetParameterCtx) (*base.Response, error)
+	onConnOpen     func(*gortsplib.ServerHandlerOnConnOpenCtx)
+	onConnClose    func(*gortsplib.ServerHandlerOnConnCloseCtx)
+	onSessionOpen  func(*gortsplib.ServerHandlerOnSessionOpenCtx)
+	onSessionClose func(*gortsplib.ServerHandlerOnSessionCloseCtx)
+	onDescribe     func(*gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error)
+	onAnnounce     func(*gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error)
+	onSetup        func(*gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error)
+	onPlay         func(*gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error)
+	onRecord       func(*gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error)
+	onPause        func(*gortsplib.ServerHandlerOnPauseCtx) (*base.Response, error)
+	onSetParameter func(*gortsplib.ServerHandlerOnSetParameterCtx) (*base.Response, error)
+	onGetParameter func(*gortsplib.ServerHandlerOnGetParameterCtx) (*base.Response, error)
 }
 
-func (sh *testServerHandler) OnConnOpen(ctx *rtsp-engine.ServerHandlerOnConnOpenCtx) {
+func (sh *testServerHandler) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
 	if sh.onConnOpen != nil {
 		sh.onConnOpen(ctx)
 	}
 }
 
-func (sh *testServerHandler) OnConnClose(ctx *rtsp-engine.ServerHandlerOnConnCloseCtx) {
+func (sh *testServerHandler) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
 	if sh.onConnClose != nil {
 		sh.onConnClose(ctx)
 	}
 }
 
-func (sh *testServerHandler) OnSessionOpen(ctx *rtsp-engine.ServerHandlerOnSessionOpenCtx) {
+func (sh *testServerHandler) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
 	if sh.onSessionOpen != nil {
 		sh.onSessionOpen(ctx)
 	}
 }
 
-func (sh *testServerHandler) OnSessionClose(ctx *rtsp-engine.ServerHandlerOnSessionCloseCtx) {
+func (sh *testServerHandler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
 	if sh.onSessionClose != nil {
 		sh.onSessionClose(ctx)
 	}
 }
 
-func (sh *testServerHandler) OnDescribe(ctx *rtsp-engine.ServerHandlerOnDescribeCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+func (sh *testServerHandler) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	if sh.onDescribe != nil {
 		return sh.onDescribe(ctx)
 	}
 	return nil, nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnAnnounce(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
 	if sh.onAnnounce != nil {
 		return sh.onAnnounce(ctx)
 	}
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnSetup(ctx *rtsp-engine.ServerHandlerOnSetupCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+func (sh *testServerHandler) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	if sh.onSetup != nil {
 		return sh.onSetup(ctx)
 	}
 	return nil, nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnPlay(ctx *rtsp-engine.ServerHandlerOnPlayCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
 	if sh.onPlay != nil {
 		return sh.onPlay(ctx)
 	}
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnRecord(ctx *rtsp-engine.ServerHandlerOnRecordCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
 	if sh.onRecord != nil {
 		return sh.onRecord(ctx)
 	}
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnPause(ctx *rtsp-engine.ServerHandlerOnPauseCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnPause(ctx *gortsplib.ServerHandlerOnPauseCtx) (*base.Response, error) {
 	if sh.onPause != nil {
 		return sh.onPause(ctx)
 	}
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnSetParameter(ctx *rtsp-engine.ServerHandlerOnSetParameterCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnSetParameter(ctx *gortsplib.ServerHandlerOnSetParameterCtx) (*base.Response, error) {
 	if sh.onSetParameter != nil {
 		return sh.onSetParameter(ctx)
 	}
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (sh *testServerHandler) OnGetParameter(ctx *rtsp-engine.ServerHandlerOnGetParameterCtx) (*base.Response, error) {
+func (sh *testServerHandler) OnGetParameter(ctx *gortsplib.ServerHandlerOnGetParameterCtx) (*base.Response, error) {
 	if sh.onGetParameter != nil {
 		return sh.onGetParameter(ctx)
 	}
@@ -181,14 +181,14 @@ func newContainer(image string, name string, args []string) (*container, error) 
 		name: name,
 	}
 
-	exec.Command("docker", "kill", "rtsp-engine-test-"+name).Run()
-	exec.Command("docker", "wait", "rtsp-engine-test-"+name).Run()
+	exec.Command("docker", "kill", "gortsplib-test-"+name).Run()
+	exec.Command("docker", "wait", "gortsplib-test-"+name).Run()
 
 	cmd := []string{
 		"docker", "run",
 		"--network=host",
-		"--name=rtsp-engine-test-" + name,
-		"rtsp-engine-test-" + image,
+		"--name=gortsplib-test-" + name,
+		"gortsplib-test-" + image,
 	}
 	cmd = append(cmd, args...)
 	ecmd := exec.Command(cmd[0], cmd[1:]...)
@@ -206,14 +206,14 @@ func newContainer(image string, name string, args []string) (*container, error) 
 }
 
 func (c *container) close() {
-	exec.Command("docker", "kill", "rtsp-engine-test-"+c.name).Run()
-	exec.Command("docker", "wait", "rtsp-engine-test-"+c.name).Run()
-	exec.Command("docker", "rm", "rtsp-engine-test-"+c.name).Run()
+	exec.Command("docker", "kill", "gortsplib-test-"+c.name).Run()
+	exec.Command("docker", "wait", "gortsplib-test-"+c.name).Run()
+	exec.Command("docker", "rm", "gortsplib-test-"+c.name).Run()
 }
 
 func (c *container) wait() int {
-	exec.Command("docker", "wait", "rtsp-engine-test-"+c.name).Run()
-	out, _ := exec.Command("docker", "inspect", "rtsp-engine-test-"+c.name,
+	exec.Command("docker", "wait", "gortsplib-test-"+c.name).Run()
+	out, _ := exec.Command("docker", "inspect", "gortsplib-test-"+c.name,
 		"--format={{.State.ExitCode}}").Output()
 	code, _ := strconv.ParseInt(string(out[:len(out)-1]), 10, 64)
 	return int(code)
@@ -221,7 +221,7 @@ func (c *container) wait() int {
 
 func buildImage(image string) error {
 	ecmd := exec.Command("docker", "build", filepath.Join("images", image),
-		"-t", "rtsp-engine-test-"+image)
+		"-t", "gortsplib-test-"+image)
 	ecmd.Stdout = nil
 	ecmd.Stderr = os.Stderr
 	return ecmd.Run()
@@ -266,12 +266,12 @@ func TestServerRecordRead(t *testing.T) {
 		t.Run(ca.publisherSoft+"_"+ca.publisherProto+"_"+
 			ca.readerSoft+"_"+ca.readerProto, func(t *testing.T) {
 			var mutex sync.Mutex
-			var stream *rtsp-engine.ServerStream
-			var publisher *rtsp-engine.ServerSession
+			var stream *gortsplib.ServerStream
+			var publisher *gortsplib.ServerSession
 
-			s := &rtsp-engine.Server{
+			s := &gortsplib.Server{
 				Handler: &testServerHandler{
-					onSessionClose: func(ctx *rtsp-engine.ServerHandlerOnSessionCloseCtx) {
+					onSessionClose: func(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
 						mutex.Lock()
 						defer mutex.Unlock()
 
@@ -282,7 +282,7 @@ func TestServerRecordRead(t *testing.T) {
 							}
 						}
 					},
-					onDescribe: func(ctx *rtsp-engine.ServerHandlerOnDescribeCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+					onDescribe: func(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
 						if ctx.Path != "test/stream" {
 							return &base.Response{
 								StatusCode: base.StatusBadRequest,
@@ -307,7 +307,7 @@ func TestServerRecordRead(t *testing.T) {
 							StatusCode: base.StatusOK,
 						}, stream, nil
 					},
-					onAnnounce: func(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+					onAnnounce: func(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
 						if ctx.Path != "test/stream" {
 							return &base.Response{
 								StatusCode: base.StatusBadRequest,
@@ -328,14 +328,14 @@ func TestServerRecordRead(t *testing.T) {
 							}, fmt.Errorf("someone is already publishing")
 						}
 
-						stream = rtsp-engine.NewServerStream(ctx.Medias)
+						stream = gortsplib.NewServerStream(ctx.Medias)
 						publisher = ctx.Session
 
 						return &base.Response{
 							StatusCode: base.StatusOK,
 						}, nil
 					},
-					onSetup: func(ctx *rtsp-engine.ServerHandlerOnSetupCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+					onSetup: func(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
 						if ctx.Path != "test/stream" {
 							return &base.Response{
 								StatusCode: base.StatusBadRequest,
@@ -357,7 +357,7 @@ func TestServerRecordRead(t *testing.T) {
 							StatusCode: base.StatusOK,
 						}, stream, nil
 					},
-					onPlay: func(ctx *rtsp-engine.ServerHandlerOnPlayCtx) (*base.Response, error) {
+					onPlay: func(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
 						if ctx.Path != "test/stream" {
 							return &base.Response{
 								StatusCode: base.StatusBadRequest,
@@ -373,7 +373,7 @@ func TestServerRecordRead(t *testing.T) {
 							StatusCode: base.StatusOK,
 						}, nil
 					},
-					onRecord: func(ctx *rtsp-engine.ServerHandlerOnRecordCtx) (*base.Response, error) {
+					onRecord: func(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
 						if ctx.Path != "test/stream" {
 							return &base.Response{
 								StatusCode: base.StatusBadRequest,

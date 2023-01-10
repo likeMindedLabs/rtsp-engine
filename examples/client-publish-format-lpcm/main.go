@@ -46,7 +46,7 @@ func main() {
 		}},
 	}}
 
-	c := rtsp-engine.Client{}
+	c := gortsplib.Client{}
 
 	// connect to the server and start recording the media
 	err = c.StartRecording("rtsp://localhost:8554/mystream", medias)

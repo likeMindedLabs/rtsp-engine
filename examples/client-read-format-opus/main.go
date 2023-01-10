@@ -15,7 +15,7 @@ import (
 // 3. get Opus packets of that media
 
 func main() {
-	c := rtsp-engine.Client{}
+	c := gortsplib.Client{}
 
 	// parse URL
 	u, err := url.Parse("rtsp://localhost:8554/mystream")

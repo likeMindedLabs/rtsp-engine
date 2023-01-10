@@ -15,7 +15,7 @@ import (
 // 2. re-publish all medias on another path.
 
 func main() {
-	reader := rtsp-engine.Client{}
+	reader := gortsplib.Client{}
 
 	// parse source URL
 	sourceURL, err := url.Parse("rtsp://localhost:8554/mystream")
@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// connect to the server and start recording the same medias
-	publisher := rtsp-engine.Client{}
+	publisher := gortsplib.Client{}
 	err = publisher.StartRecording("rtsp://localhost:8554/mystream2", medias)
 	if err != nil {
 		panic(err)

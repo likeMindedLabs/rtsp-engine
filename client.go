@@ -4,7 +4,7 @@ written for rtsp-simple-server.
 
 Examples are available at https://github.com/likeMindedLabs/rtsp-engine/tree/master/examples
 */
-package rtsp-engine
+package gortsplib
 
 import (
 	"context"

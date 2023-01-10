@@ -1,4 +1,4 @@
-package rtsp-engine
+package gortsplib
 
 import (
 	"crypto/tls"

@@ -20,27 +20,27 @@ import (
 
 type serverHandler struct {
 	mutex     sync.Mutex
-	stream    *rtsp-engine.ServerStream
-	publisher *rtsp-engine.ServerSession
+	stream    *gortsplib.ServerStream
+	publisher *gortsplib.ServerSession
 }
 
 // called when a connection is opened.
-func (sh *serverHandler) OnConnOpen(ctx *rtsp-engine.ServerHandlerOnConnOpenCtx) {
+func (sh *serverHandler) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
 	log.Printf("conn opened")
 }
 
 // called when a connection is closed.
-func (sh *serverHandler) OnConnClose(ctx *rtsp-engine.ServerHandlerOnConnCloseCtx) {
+func (sh *serverHandler) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
 	log.Printf("conn closed (%v)", ctx.Error)
 }
 
 // called when a session is opened.
-func (sh *serverHandler) OnSessionOpen(ctx *rtsp-engine.ServerHandlerOnSessionOpenCtx) {
+func (sh *serverHandler) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
 	log.Printf("session opened")
 }
 
 // called when a session is closed.
-func (sh *serverHandler) OnSessionClose(ctx *rtsp-engine.ServerHandlerOnSessionCloseCtx) {
+func (sh *serverHandler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
 	log.Printf("session closed")
 
 	sh.mutex.Lock()
@@ -55,7 +55,7 @@ func (sh *serverHandler) OnSessionClose(ctx *rtsp-engine.ServerHandlerOnSessionC
 }
 
 // called when receiving a DESCRIBE request.
-func (sh *serverHandler) OnDescribe(ctx *rtsp-engine.ServerHandlerOnDescribeCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+func (sh *serverHandler) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	log.Printf("describe request")
 
 	sh.mutex.Lock()
@@ -75,7 +75,7 @@ func (sh *serverHandler) OnDescribe(ctx *rtsp-engine.ServerHandlerOnDescribeCtx)
 }
 
 // called when receiving an ANNOUNCE request.
-func (sh *serverHandler) OnAnnounce(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+func (sh *serverHandler) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
 	log.Printf("announce request")
 
 	sh.mutex.Lock()
@@ -88,7 +88,7 @@ func (sh *serverHandler) OnAnnounce(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx)
 	}
 
 	// create the stream and save the publisher
-	sh.stream = rtsp-engine.NewServerStream(ctx.Medias)
+	sh.stream = gortsplib.NewServerStream(ctx.Medias)
 	sh.publisher = ctx.Session
 
 	return &base.Response{
@@ -97,7 +97,7 @@ func (sh *serverHandler) OnAnnounce(ctx *rtsp-engine.ServerHandlerOnAnnounceCtx)
 }
 
 // called when receiving a SETUP request.
-func (sh *serverHandler) OnSetup(ctx *rtsp-engine.ServerHandlerOnSetupCtx) (*base.Response, *rtsp-engine.ServerStream, error) {
+func (sh *serverHandler) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	log.Printf("setup request")
 
 	// no one is publishing yet
@@ -113,7 +113,7 @@ func (sh *serverHandler) OnSetup(ctx *rtsp-engine.ServerHandlerOnSetupCtx) (*bas
 }
 
 // called when receiving a PLAY request.
-func (sh *serverHandler) OnPlay(ctx *rtsp-engine.ServerHandlerOnPlayCtx) (*base.Response, error) {
+func (sh *serverHandler) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
 	log.Printf("play request")
 
 	return &base.Response{
@@ -122,7 +122,7 @@ func (sh *serverHandler) OnPlay(ctx *rtsp-engine.ServerHandlerOnPlayCtx) (*base.
 }
 
 // called when receiving a RECORD request.
-func (sh *serverHandler) OnRecord(ctx *rtsp-engine.ServerHandlerOnRecordCtx) (*base.Response, error) {
+func (sh *serverHandler) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
 	log.Printf("record request")
 
 	// called when receiving a RTP packet
@@ -146,7 +146,7 @@ func main() {
 	}
 
 	// configure server
-	s := &rtsp-engine.Server{
+	s := &gortsplib.Server{
 		Handler:     &serverHandler{},
 		TLSConfig:   &tls.Config{Certificates: []tls.Certificate{cert}},
 		RTSPAddress: ":8322",

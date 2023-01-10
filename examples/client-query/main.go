@@ -12,7 +12,7 @@ import (
 // 2. get and print informations about medias published on a path.
 
 func main() {
-	c := rtsp-engine.Client{}
+	c := gortsplib.Client{}
 
 	u, err := url.Parse("rtsp://localhost:8554/mypath")
 	if err != nil {

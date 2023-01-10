@@ -1,4 +1,4 @@
-package rtsp-engine
+package gortsplib
 
 const (
 	// same size as GStreamer's rtspsrc

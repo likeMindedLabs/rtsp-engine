@@ -15,7 +15,7 @@ import (
 // and read all medias on a path.
 
 func main() {
-	c := rtsp-engine.Client{}
+	c := gortsplib.Client{}
 
 	// parse URL
 	u, err := url.Parse("rtsp://localhost:8554/mystream")
