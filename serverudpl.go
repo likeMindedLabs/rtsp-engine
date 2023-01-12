@@ -1,33 +1,26 @@
 package gortsplib
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/ipv4"
-
-	"github.com/likeMindedLabs/rtsp-engine/pkg/multibuffer"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/ringbuffer"
 )
 
-const (
-	serverConnUDPListenerKernelReadBufferSize = 0x80000 // same as gstreamer's rtspsrc
-)
-
-type bufAddrPair struct {
-	buf  []byte
-	addr *net.UDPAddr
-}
-
-type clientData struct {
-	ss           *ServerSession
-	trackID      int
-	isPublishing bool
+func serverFindFormatWithSSRC(
+	formats map[uint8]*serverSessionFormat,
+	ssrc uint32,
+) *serverSessionFormat {
+	for _, format := range formats {
+		tssrc, ok := format.udpRTCPReceiver.LastSSRC()
+		if ok && tssrc == ssrc {
+			return format
+		}
+	}
+	return nil
 }
 
 type clientAddr struct {
@@ -46,20 +39,26 @@ func (p *clientAddr) fill(ip net.IP, port int) {
 	}
 }
 
+func onDecodeError(ss *ServerSession, err error) {
+	if h, ok := ss.s.Handler.(ServerHandlerOnDecodeError); ok {
+		h.OnDecodeError(&ServerHandlerOnDecodeErrorCtx{
+			Session: ss,
+			Error:   err,
+		})
+	}
+}
+
 type serverUDPListener struct {
 	s *Server
 
-	ctx          context.Context
-	ctxCancel    func()
-	wg           sync.WaitGroup
 	pc           *net.UDPConn
 	listenIP     net.IP
-	streamType   StreamType
+	isRTP        bool
 	writeTimeout time.Duration
-	readBuf      *multibuffer.MultiBuffer
 	clientsMutex sync.RWMutex
-	clients      map[clientAddr]*clientData
-	ringBuffer   *ringbuffer.RingBuffer
+	clients      map[clientAddr]*serverSessionMedia
+
+	readerDone chan struct{}
 }
 
 func newServerUDPListenerMulticastPair(s *Server) (*serverUDPListener, *serverUDPListener, error) {
@@ -71,27 +70,28 @@ func newServerUDPListenerMulticastPair(s *Server) (*serverUDPListener, *serverUD
 	}
 	ip := <-res
 
-	rtpListener, err := newServerUDPListener(s, true,
-		ip.String()+":"+strconv.FormatInt(int64(s.MulticastRTPPort), 10), StreamTypeRTP)
+	rtpl, err := newServerUDPListener(s, true,
+		ip.String()+":"+strconv.FormatInt(int64(s.MulticastRTPPort), 10), true)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rtcpListener, err := newServerUDPListener(s, true,
-		ip.String()+":"+strconv.FormatInt(int64(s.MulticastRTCPPort), 10), StreamTypeRTCP)
+	rtcpl, err := newServerUDPListener(s, true,
+		ip.String()+":"+strconv.FormatInt(int64(s.MulticastRTCPPort), 10), false)
 	if err != nil {
-		rtpListener.close()
+		rtpl.close()
 		return nil, nil, err
 	}
 
-	return rtpListener, rtcpListener, nil
+	return rtpl, rtcpl, nil
 }
 
 func newServerUDPListener(
 	s *Server,
 	multicast bool,
 	address string,
-	streamType StreamType) (*serverUDPListener, error) {
+	isRTP bool,
+) (*serverUDPListener, error) {
 	var pc *net.UDPConn
 	var listenIP net.IP
 	if multicast {
@@ -107,7 +107,7 @@ func newServerUDPListener(
 
 		p := ipv4.NewPacketConn(tmp)
 
-		err = p.SetTTL(127)
+		err = p.SetMulticastTTL(multicastTTL)
 		if err != nil {
 			return nil, err
 		}
@@ -120,9 +120,11 @@ func newServerUDPListener(
 		listenIP = net.ParseIP(host)
 
 		for _, intf := range intfs {
-			err := p.JoinGroup(&intf, &net.UDPAddr{IP: listenIP})
-			if err != nil {
-				return nil, err
+			if (intf.Flags & net.FlagMulticast) != 0 {
+				// do not check for errors.
+				// on macOS, there are interfaces with the multicast flag but
+				// without support for multicast, that makes this function fail.
+				p.JoinGroup(&intf, &net.UDPAddr{IP: listenIP})
 			}
 		}
 
@@ -137,36 +139,29 @@ func newServerUDPListener(
 		listenIP = tmp.LocalAddr().(*net.UDPAddr).IP
 	}
 
-	err := pc.SetReadBuffer(serverConnUDPListenerKernelReadBufferSize)
+	err := pc.SetReadBuffer(udpKernelReadBufferSize)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, ctxCancel := context.WithCancel(context.Background())
-
 	u := &serverUDPListener{
-		s:         s,
-		ctx:       ctx,
-		ctxCancel: ctxCancel,
-		pc:        pc,
-		listenIP:  listenIP,
-		clients:   make(map[clientAddr]*clientData),
+		s:            s,
+		pc:           pc,
+		listenIP:     listenIP,
+		clients:      make(map[clientAddr]*serverSessionMedia),
+		isRTP:        isRTP,
+		writeTimeout: s.WriteTimeout,
+		readerDone:   make(chan struct{}),
 	}
 
-	u.streamType = streamType
-	u.writeTimeout = s.WriteTimeout
-	u.readBuf = multibuffer.New(uint64(s.ReadBufferCount), uint64(s.ReadBufferSize))
-	u.ringBuffer = ringbuffer.New(uint64(s.ReadBufferCount))
-
-	u.wg.Add(1)
-	go u.run()
+	go u.runReader()
 
 	return u, nil
 }
 
 func (u *serverUDPListener) close() {
-	u.ctxCancel()
-	u.wg.Wait()
+	u.pc.Close()
+	<-u.readerDone
 }
 
 func (u *serverUDPListener) ip() net.IP {
@@ -177,95 +172,68 @@ func (u *serverUDPListener) port() int {
 	return u.pc.LocalAddr().(*net.UDPAddr).Port
 }
 
-func (u *serverUDPListener) run() {
-	defer u.wg.Done()
+func (u *serverUDPListener) runReader() {
+	defer close(u.readerDone)
 
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
-
-		for {
-			buf := u.readBuf.Next()
-			n, addr, err := u.pc.ReadFromUDP(buf)
-			if err != nil {
-				break
-			}
-
-			func() {
-				u.clientsMutex.RLock()
-				defer u.clientsMutex.RUnlock()
-
-				var clientAddr clientAddr
-				clientAddr.fill(addr.IP, addr.Port)
-				clientData, ok := u.clients[clientAddr]
-				if !ok {
-					return
-				}
-
-				if clientData.isPublishing {
-					now := time.Now()
-					atomic.StoreInt64(clientData.ss.udpLastFrameTime, now.Unix())
-					clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessFrame(now, u.streamType, buf[:n])
-				}
-
-				if h, ok := u.s.Handler.(ServerHandlerOnFrame); ok {
-					h.OnFrame(&ServerHandlerOnFrameCtx{
-						Session:    clientData.ss,
-						TrackID:    clientData.trackID,
-						StreamType: u.streamType,
-						Payload:    buf[:n],
-					})
-				}
-			}()
+	var readFunc func(*serverSessionMedia, []byte)
+	if u.isRTP {
+		readFunc = func(sm *serverSessionMedia, payload []byte) {
+			sm.readRTP(payload)
 		}
-	}()
+	} else {
+		readFunc = func(sm *serverSessionMedia, payload []byte) {
+			sm.readRTCP(payload)
+		}
+	}
 
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
+	for {
+		buf := make([]byte, maxPacketSize+1)
+		n, addr, err := u.pc.ReadFromUDP(buf)
+		if err != nil {
+			break
+		}
 
-		for {
-			tmp, ok := u.ringBuffer.Pull()
+		func() {
+			u.clientsMutex.RLock()
+			defer u.clientsMutex.RUnlock()
+
+			var clientAddr clientAddr
+			clientAddr.fill(addr.IP, addr.Port)
+			sm, ok := u.clients[clientAddr]
 			if !ok {
 				return
 			}
-			pair := tmp.(bufAddrPair)
 
-			u.pc.SetWriteDeadline(time.Now().Add(u.writeTimeout))
-			u.pc.WriteTo(pair.buf, pair.addr)
-		}
-	}()
-
-	<-u.ctx.Done()
-
-	u.pc.Close()
-	u.ringBuffer.Close()
+			readFunc(sm, buf[:n])
+		}()
+	}
 }
 
-func (u *serverUDPListener) write(buf []byte, addr *net.UDPAddr) {
-	u.ringBuffer.Push(bufAddrPair{buf, addr})
+func (u *serverUDPListener) write(buf []byte, addr *net.UDPAddr) error {
+	// no mutex is needed here since Write() has an internal lock.
+	// https://github.com/golang/go/issues/27203#issuecomment-534386117
+
+	u.pc.SetWriteDeadline(time.Now().Add(u.writeTimeout))
+	_, err := u.pc.WriteTo(buf, addr)
+	return err
 }
 
-func (u *serverUDPListener) addClient(ip net.IP, port int, ss *ServerSession, trackID int, isPublishing bool) {
+func (u *serverUDPListener) addClient(ip net.IP, port int, sm *serverSessionMedia) {
 	u.clientsMutex.Lock()
 	defer u.clientsMutex.Unlock()
 
 	var addr clientAddr
 	addr.fill(ip, port)
 
-	u.clients[addr] = &clientData{
-		ss:           ss,
-		trackID:      trackID,
-		isPublishing: isPublishing,
-	}
+	u.clients[addr] = sm
 }
 
-func (u *serverUDPListener) removeClient(ss *ServerSession) {
+func (u *serverUDPListener) removeClient(sm *serverSessionMedia) {
 	u.clientsMutex.Lock()
 	defer u.clientsMutex.Unlock()
 
-	for addr, data := range u.clients {
-		if data.ss == ss {
+	for addr, sm1 := range u.clients {
+		if sm1 == sm {
 			delete(u.clients, addr)
 		}
 	}

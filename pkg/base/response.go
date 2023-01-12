@@ -2,7 +2,6 @@ package base
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"strconv"
 )
@@ -10,7 +9,7 @@ import (
 // StatusCode is the status code of a RTSP response.
 type StatusCode int
 
-// standard status codes
+// status codes.
 const (
 	StatusContinue                           StatusCode = 100
 	StatusOK                                 StatusCode = 200
@@ -139,10 +138,10 @@ func (res *Response) Read(rb *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	proto := string(byts[:len(byts)-1])
+	proto := byts[:len(byts)-1]
 
-	if proto != rtspProtocol10 {
-		return fmt.Errorf("expected '%s', got '%s'", rtspProtocol10, proto)
+	if string(proto) != rtspProtocol10 {
+		return fmt.Errorf("expected '%s', got %v", rtspProtocol10, proto)
 	}
 
 	byts, err = readBytesLimited(rb, ' ', 4)
@@ -185,62 +184,65 @@ func (res *Response) Read(rb *bufio.Reader) error {
 	return nil
 }
 
-// ReadIgnoreFrames reads a response and ignores any interleaved frame sent
-// before the response.
-func (res *Response) ReadIgnoreFrames(rb *bufio.Reader, buf []byte) error {
-	buflen := len(buf)
-	f := InterleavedFrame{
-		Payload: buf,
-	}
+// MarshalSize returns the size of a Response.
+func (res Response) MarshalSize() int {
+	n := 0
 
-	for {
-		f.Payload = f.Payload[:buflen]
-		recv, err := ReadInterleavedFrameOrResponse(&f, res, rb)
-		if err != nil {
-			return err
-		}
-
-		if _, ok := recv.(*Response); ok {
-			return nil
-		}
-	}
-}
-
-// Write writes a Response.
-func (res Response) Write(bw *bufio.Writer) error {
 	if res.StatusMessage == "" {
 		if status, ok := statusMessages[res.StatusCode]; ok {
 			res.StatusMessage = status
 		}
 	}
 
-	_, err := bw.Write([]byte(rtspProtocol10 + " " +
+	n += len([]byte(rtspProtocol10 + " " +
 		strconv.FormatInt(int64(res.StatusCode), 10) + " " +
 		res.StatusMessage + "\r\n"))
-	if err != nil {
-		return err
-	}
 
 	if len(res.Body) != 0 {
 		res.Header["Content-Length"] = HeaderValue{strconv.FormatInt(int64(len(res.Body)), 10)}
 	}
 
-	err = res.Header.write(bw)
-	if err != nil {
-		return err
+	n += res.Header.marshalSize()
+
+	n += body(res.Body).marshalSize()
+
+	return n
+}
+
+// MarshalTo writes a Response.
+func (res Response) MarshalTo(buf []byte) (int, error) {
+	if res.StatusMessage == "" {
+		if status, ok := statusMessages[res.StatusCode]; ok {
+			res.StatusMessage = status
+		}
 	}
 
-	err = body(res.Body).write(bw)
-	if err != nil {
-		return err
+	pos := 0
+
+	pos += copy(buf[pos:], []byte(rtspProtocol10+" "+
+		strconv.FormatInt(int64(res.StatusCode), 10)+" "+
+		res.StatusMessage+"\r\n"))
+
+	if len(res.Body) != 0 {
+		res.Header["Content-Length"] = HeaderValue{strconv.FormatInt(int64(len(res.Body)), 10)}
 	}
 
-	return bw.Flush()
+	pos += res.Header.marshalTo(buf[pos:])
+
+	pos += body(res.Body).marshalTo(buf[pos:])
+
+	return pos, nil
+}
+
+// Marshal writes a Response.
+func (res Response) Marshal() ([]byte, error) {
+	buf := make([]byte, res.MarshalSize())
+	_, err := res.MarshalTo(buf)
+	return buf, err
 }
 
 // String implements fmt.Stringer.
 func (res Response) String() string {
-	buf := bytes.NewBuffer(nil)
-	res.Write(bufio.NewWriter(buf))
-	return buf.String()
+	buf, _ := res.Marshal()
+	return string(buf)
 }

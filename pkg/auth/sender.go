@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/headers"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/headers"
 )
 
 // Sender allows to generate credentials for a Validator.
@@ -30,7 +30,7 @@ func NewSender(v base.HeaderValue, user string, pass string) (*Sender, error) {
 		return ""
 	}(); v0 != "" {
 		var auth headers.Authenticate
-		err := auth.Read(base.HeaderValue{v0})
+		err := auth.Unmarshal(base.HeaderValue{v0})
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func NewSender(v base.HeaderValue, user string, pass string) (*Sender, error) {
 		return ""
 	}(); v0 != "" {
 		var auth headers.Authenticate
-		err := auth.Read(base.HeaderValue{v0})
+		err := auth.Unmarshal(base.HeaderValue{v0})
 		if err != nil {
 			return nil, err
 		}
@@ -112,5 +112,5 @@ func (se *Sender) AddAuthorization(req *base.Request) {
 		req.Header = make(base.Header)
 	}
 
-	req.Header["Authorization"] = h.Write()
+	req.Header["Authorization"] = h.Marshal()
 }

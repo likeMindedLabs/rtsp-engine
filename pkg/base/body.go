@@ -7,6 +7,10 @@ import (
 	"strconv"
 )
 
+const (
+	rtspMaxContentLength = 128 * 1024
+)
+
 type body []byte
 
 func (b *body) read(header Header, rb *bufio.Reader) error {
@@ -35,15 +39,16 @@ func (b *body) read(header Header, rb *bufio.Reader) error {
 	return nil
 }
 
-func (b body) write(bw *bufio.Writer) error {
-	if len(b) == 0 {
-		return nil
-	}
+func (b body) marshalSize() int {
+	return len(b)
+}
 
-	_, err := bw.Write(b)
-	if err != nil {
-		return err
-	}
+func (b body) marshalTo(buf []byte) int {
+	return copy(buf, b)
+}
 
-	return nil
+func (b body) marshal() []byte {
+	buf := make([]byte, b.marshalSize())
+	b.marshalTo(buf)
+	return buf
 }

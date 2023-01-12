@@ -3,7 +3,7 @@ package liberrors
 import (
 	"fmt"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
 )
 
 // ErrClientTerminated is an error that can be returned by a client.
@@ -36,15 +36,15 @@ func (e ErrClientSessionHeaderInvalid) Error() string {
 	return fmt.Sprintf("invalid session header: %v", e.Err)
 }
 
-// ErrClientInvalidStatusCode is an error that can be returned by a client.
-type ErrClientInvalidStatusCode struct {
+// ErrClientBadStatusCode is an error that can be returned by a client.
+type ErrClientBadStatusCode struct {
 	Code    base.StatusCode
 	Message string
 }
 
 // Error implements the error interface.
-func (e ErrClientInvalidStatusCode) Error() string {
-	return fmt.Sprintf("invalid status code: %d (%s)", e.Code, e.Message)
+func (e ErrClientBadStatusCode) Error() string {
+	return fmt.Sprintf("bad status code: %d (%s)", e.Code, e.Message)
 }
 
 // ErrClientContentTypeMissing is an error that can be returned by a client.
@@ -65,20 +65,12 @@ func (e ErrClientContentTypeUnsupported) Error() string {
 	return fmt.Sprintf("unsupported Content-Type header '%v'", e.CT)
 }
 
-// ErrClientCannotReadPublishAtSameTime is an error that can be returned by a client.
-type ErrClientCannotReadPublishAtSameTime struct{}
+// ErrClientCannotSetupMediasDifferentURLs is an error that can be returned by a client.
+type ErrClientCannotSetupMediasDifferentURLs struct{}
 
 // Error implements the error interface.
-func (e ErrClientCannotReadPublishAtSameTime) Error() string {
-	return "cannot read and publish at the same time"
-}
-
-// ErrClientCannotSetupTracksDifferentURLs is an error that can be returned by a client.
-type ErrClientCannotSetupTracksDifferentURLs struct{}
-
-// Error implements the error interface.
-func (e ErrClientCannotSetupTracksDifferentURLs) Error() string {
-	return "cannot setup tracks with different base URLs"
+func (e ErrClientCannotSetupMediasDifferentURLs) Error() string {
+	return "cannot setup medias with different base URLs"
 }
 
 // ErrClientUDPPortsZero is an error that can be returned by a client.
@@ -161,14 +153,6 @@ type ErrClientTransportHeaderInterleavedIDsAlreadyUsed struct{}
 // Error implements the error interface.
 func (e ErrClientTransportHeaderInterleavedIDsAlreadyUsed) Error() string {
 	return "interleaved IDs already used"
-}
-
-// ErrClientNoUDPPacketsRecently is an error that can be returned by a client.
-type ErrClientNoUDPPacketsRecently struct{}
-
-// Error implements the error interface.
-func (e ErrClientNoUDPPacketsRecently) Error() string {
-	return "no UDP packets received (maybe there's a firewall/NAT in between)"
 }
 
 // ErrClientUDPTimeout is an error that can be returned by a client.

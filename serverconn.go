@@ -1,32 +1,22 @@
 package gortsplib
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
+	gourl "net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/liberrors"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/multibuffer"
-	"github.com/likeMindedLabs/rtsp-engine/pkg/ringbuffer"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/bytecounter"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/conn"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/liberrors"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/media"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/url"
 )
-
-const (
-	serverConnReadBufferSize  = 4096
-	serverConnWriteBufferSize = 4096
-)
-
-func stringsReverseIndex(s, substr string) int {
-	for i := len(s) - 1 - len(substr); i >= 0; i-- {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
 
 func getSessionID(header base.Header) string {
 	if h, ok := header["Session"]; ok && len(h) == 1 {
@@ -45,20 +35,14 @@ type ServerConn struct {
 	s     *Server
 	nconn net.Conn
 
-	ctx                         context.Context
-	ctxCancel                   func()
-	remoteAddr                  *net.TCPAddr // to improve speed
-	br                          *bufio.Reader
-	bw                          *bufio.Writer
-	sessions                    map[string]*ServerSession
-	tcpFrameSetEnabled          bool                     // tcp
-	tcpFrameEnabled             bool                     // tcp
-	tcpSession                  *ServerSession           // tcp
-	tcpFrameIsRecording         bool                     // tcp
-	tcpFrameTimeout             bool                     // tcp
-	tcpFrameBuffer              *multibuffer.MultiBuffer // tcp
-	tcpFrameWriteBuffer         *ringbuffer.RingBuffer   // tcp
-	tcpFrameBackgroundWriteDone chan struct{}            // tcp
+	ctx        context.Context
+	ctxCancel  func()
+	userData   interface{}
+	remoteAddr *net.TCPAddr
+	bc         *bytecounter.ByteCounter
+	conn       *conn.Conn
+	session    *ServerSession
+	readFunc   func(readRequest chan readReq) error
 
 	// in
 	sessionRemove chan *ServerSession
@@ -69,18 +53,26 @@ type ServerConn struct {
 
 func newServerConn(
 	s *Server,
-	nconn net.Conn) *ServerConn {
+	nconn net.Conn,
+) *ServerConn {
 	ctx, ctxCancel := context.WithCancel(s.ctx)
+
+	if s.TLSConfig != nil {
+		nconn = tls.Server(nconn, s.TLSConfig)
+	}
 
 	sc := &ServerConn{
 		s:             s,
 		nconn:         nconn,
+		bc:            bytecounter.New(nconn, nil, nil),
 		ctx:           ctx,
 		ctxCancel:     ctxCancel,
 		remoteAddr:    nconn.RemoteAddr().(*net.TCPAddr),
 		sessionRemove: make(chan *ServerSession),
 		done:          make(chan struct{}),
 	}
+
+	sc.readFunc = sc.readFuncStandard
 
 	s.wg.Add(1)
 	go sc.run()
@@ -97,6 +89,26 @@ func (sc *ServerConn) Close() error {
 // NetConn returns the underlying net.Conn.
 func (sc *ServerConn) NetConn() net.Conn {
 	return sc.nconn
+}
+
+// BytesReceived returns the number of read bytes.
+func (sc *ServerConn) BytesReceived() uint64 {
+	return sc.bc.BytesReceived()
+}
+
+// BytesSent returns the number of written bytes.
+func (sc *ServerConn) BytesSent() uint64 {
+	return sc.bc.BytesSent()
+}
+
+// SetUserData sets some user data associated to the connection.
+func (sc *ServerConn) SetUserData(v interface{}) {
+	sc.userData = v
+}
+
+// UserData returns some user data associated to the connection.
+func (sc *ServerConn) UserData() interface{} {
+	return sc.userData
 }
 
 func (sc *ServerConn) ip() net.IP {
@@ -117,147 +129,24 @@ func (sc *ServerConn) run() {
 		})
 	}
 
-	conn := func() net.Conn {
-		if sc.s.TLSConfig != nil {
-			return tls.Server(sc.nconn, sc.s.TLSConfig)
-		}
-		return sc.nconn
-	}()
-
-	sc.br = bufio.NewReaderSize(conn, serverConnReadBufferSize)
-	sc.bw = bufio.NewWriterSize(conn, serverConnWriteBufferSize)
-	sc.sessions = make(map[string]*ServerSession)
-
-	// instantiate always to allow writing to this conn before Play()
-	sc.tcpFrameWriteBuffer = ringbuffer.New(uint64(sc.s.ReadBufferCount))
+	sc.conn = conn.NewConn(sc.bc)
 
 	readRequest := make(chan readReq)
 	readErr := make(chan error)
 	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		err := func() error {
-			var req base.Request
-			var frame base.InterleavedFrame
+	go sc.runReader(readRequest, readErr, readDone)
 
-			for {
-				if sc.tcpFrameEnabled {
-					if sc.tcpFrameTimeout {
-						sc.nconn.SetReadDeadline(time.Now().Add(sc.s.ReadTimeout))
-					}
-
-					frame.Payload = sc.tcpFrameBuffer.Next()
-					what, err := base.ReadInterleavedFrameOrRequest(&frame, &req, sc.br)
-					if err != nil {
-						return err
-					}
-
-					switch what.(type) {
-					case *base.InterleavedFrame:
-						channel := frame.Channel
-						streamType := base.StreamTypeRTP
-						if (channel % 2) != 0 {
-							channel--
-							streamType = base.StreamTypeRTCP
-						}
-
-						// forward frame only if it has been set up
-						if trackID, ok := sc.tcpSession.setuppedTracksByChannel[channel]; ok {
-							if sc.tcpFrameIsRecording {
-								sc.tcpSession.announcedTracks[trackID].rtcpReceiver.ProcessFrame(
-									time.Now(), streamType, frame.Payload)
-							}
-
-							if h, ok := sc.s.Handler.(ServerHandlerOnFrame); ok {
-								h.OnFrame(&ServerHandlerOnFrameCtx{
-									Session:    sc.tcpSession,
-									TrackID:    trackID,
-									StreamType: streamType,
-									Payload:    frame.Payload,
-								})
-							}
-						}
-
-					case *base.Request:
-						cres := make(chan error)
-						select {
-						case readRequest <- readReq{req: &req, res: cres}:
-							err := <-cres
-							if err != nil {
-								return err
-							}
-
-						case <-sc.ctx.Done():
-							return liberrors.ErrServerTerminated{}
-						}
-					}
-
-				} else {
-					err := req.Read(sc.br)
-					if err != nil {
-						return err
-					}
-
-					cres := make(chan error)
-					select {
-					case readRequest <- readReq{req: &req, res: cres}:
-						err = <-cres
-						if err != nil {
-							return err
-						}
-
-					case <-sc.ctx.Done():
-						return liberrors.ErrServerTerminated{}
-					}
-				}
-			}
-		}()
-
-		select {
-		case readErr <- err:
-		case <-sc.ctx.Done():
-		}
-	}()
-
-	err := func() error {
-		for {
-			select {
-			case req := <-readRequest:
-				req.res <- sc.handleRequestOuter(req.req)
-
-			case err := <-readErr:
-				return err
-
-			case ss := <-sc.sessionRemove:
-				if _, ok := sc.sessions[ss.secretID]; ok {
-					delete(sc.sessions, ss.secretID)
-
-					select {
-					case ss.connRemove <- sc:
-					case <-ss.ctx.Done():
-					}
-				}
-
-			case <-sc.ctx.Done():
-				return liberrors.ErrServerTerminated{}
-			}
-		}
-	}()
+	err := sc.runInner(readRequest, readErr)
 
 	sc.ctxCancel()
-
-	if sc.tcpFrameEnabled {
-		sc.tcpFrameWriteBuffer.Close()
-		<-sc.tcpFrameBackgroundWriteDone
-	}
 
 	sc.nconn.Close()
 	<-readDone
 
-	for _, ss := range sc.sessions {
+	if sc.session != nil {
 		select {
-		case ss.connRemove <- sc:
-		case <-ss.ctx.Done():
+		case sc.session.connRemove <- sc:
+		case <-sc.session.ctx.Done():
 		}
 	}
 
@@ -274,6 +163,130 @@ func (sc *ServerConn) run() {
 	}
 }
 
+func (sc *ServerConn) runInner(readRequest chan readReq, readErr chan error) error {
+	for {
+		select {
+		case req := <-readRequest:
+			req.res <- sc.handleRequestOuter(req.req)
+
+		case err := <-readErr:
+			return err
+
+		case ss := <-sc.sessionRemove:
+			if sc.session == ss {
+				sc.session = nil
+			}
+
+		case <-sc.ctx.Done():
+			return liberrors.ErrServerTerminated{}
+		}
+	}
+}
+
+var errSwitchReadFunc = errors.New("switch read function")
+
+func (sc *ServerConn) runReader(readRequest chan readReq, readErr chan error, readDone chan struct{}) {
+	defer close(readDone)
+
+	for {
+		err := sc.readFunc(readRequest)
+
+		if err == errSwitchReadFunc {
+			continue
+		}
+
+		select {
+		case readErr <- err:
+		case <-sc.ctx.Done():
+		}
+		break
+	}
+}
+
+func (sc *ServerConn) readFuncStandard(readRequest chan readReq) error {
+	// reset deadline
+	sc.nconn.SetReadDeadline(time.Time{})
+
+	for {
+		any, err := sc.conn.ReadInterleavedFrameOrRequest()
+		if err != nil {
+			return err
+		}
+
+		switch what := any.(type) {
+		case *base.Request:
+			cres := make(chan error)
+			select {
+			case readRequest <- readReq{req: what, res: cres}:
+				err = <-cres
+				if err != nil {
+					return err
+				}
+
+			case <-sc.ctx.Done():
+				return liberrors.ErrServerTerminated{}
+			}
+
+		default:
+			return liberrors.ErrServerUnexpectedFrame{}
+		}
+	}
+}
+
+func (sc *ServerConn) readFuncTCP(readRequest chan readReq) error {
+	// reset deadline
+	sc.nconn.SetReadDeadline(time.Time{})
+
+	select {
+	case sc.session.startWriter <- struct{}{}:
+	case <-sc.session.ctx.Done():
+	}
+
+	for {
+		if sc.session.state == ServerSessionStateRecord {
+			sc.nconn.SetReadDeadline(time.Now().Add(sc.s.ReadTimeout))
+		}
+
+		what, err := sc.conn.ReadInterleavedFrameOrRequest()
+		if err != nil {
+			return err
+		}
+
+		switch twhat := what.(type) {
+		case *base.InterleavedFrame:
+			channel := twhat.Channel
+			isRTP := true
+			if (channel % 2) != 0 {
+				channel--
+				isRTP = false
+			}
+
+			atomic.AddUint64(sc.session.bytesReceived, uint64(len(twhat.Payload)))
+
+			if sm, ok := sc.session.tcpMediasByChannel[channel]; ok {
+				if isRTP {
+					sm.readRTP(twhat.Payload)
+				} else {
+					sm.readRTCP(twhat.Payload)
+				}
+			}
+
+		case *base.Request:
+			cres := make(chan error)
+			select {
+			case readRequest <- readReq{req: twhat, res: cres}:
+				err := <-cres
+				if err != nil {
+					return err
+				}
+
+			case <-sc.ctx.Done():
+				return liberrors.ErrServerTerminated{}
+			}
+		}
+	}
+}
+
 func (sc *ServerConn) handleRequest(req *base.Request) (*base.Response, error) {
 	if cseq, ok := req.Header["CSeq"]; !ok || len(cseq) != 1 {
 		return &base.Response{
@@ -284,24 +297,26 @@ func (sc *ServerConn) handleRequest(req *base.Request) (*base.Response, error) {
 
 	sxID := getSessionID(req.Header)
 
-	// the connection can't communicate with another session
-	// if it's receiving or sending TCP frames.
-	if sc.tcpSession != nil &&
-		sxID != sc.tcpSession.secretID {
-		return &base.Response{
-			StatusCode: base.StatusBadRequest,
-		}, liberrors.ErrServerLinkedToOtherSession{}
+	var path string
+	var query string
+	switch req.Method {
+	case base.Describe, base.GetParameter, base.SetParameter:
+		pathAndQuery, ok := req.URL.RTSPPathAndQuery()
+		if !ok {
+			return &base.Response{
+				StatusCode: base.StatusBadRequest,
+			}, liberrors.ErrServerInvalidPath{}
+		}
+
+		path, query = url.PathSplitQuery(pathAndQuery)
 	}
 
 	switch req.Method {
 	case base.Options:
-		// handle request in session
 		if sxID != "" {
-			_, res, err := sc.handleRequestInSession(sxID, req, false)
-			return res, err
+			return sc.handleRequestInSession(sxID, req, false)
 		}
 
-		// handle request here
 		var methods []string
 		if _, ok := sc.s.Handler.(ServerHandlerOnDescribe); ok {
 			methods = append(methods, string(base.Describe))
@@ -336,20 +351,11 @@ func (sc *ServerConn) handleRequest(req *base.Request) (*base.Response, error) {
 
 	case base.Describe:
 		if h, ok := sc.s.Handler.(ServerHandlerOnDescribe); ok {
-			pathAndQuery, ok := req.URL.RTSPPathAndQuery()
-			if !ok {
-				return &base.Response{
-					StatusCode: base.StatusBadRequest,
-				}, liberrors.ErrServerInvalidPath{}
-			}
-
-			path, query := base.PathSplitQuery(pathAndQuery)
-
 			res, stream, err := h.OnDescribe(&ServerHandlerOnDescribeCtx{
-				Conn:  sc,
-				Req:   req,
-				Path:  path,
-				Query: query,
+				Conn:    sc,
+				Request: req,
+				Path:    path,
+				Query:   query,
 			})
 
 			if res.StatusCode == base.StatusOK {
@@ -360,8 +366,30 @@ func (sc *ServerConn) handleRequest(req *base.Request) (*base.Response, error) {
 				res.Header["Content-Base"] = base.HeaderValue{req.URL.String() + "/"}
 				res.Header["Content-Type"] = base.HeaderValue{"application/sdp"}
 
+				// VLC uses multicast if the SDP contains a multicast address.
+				// therefore, we introduce a special query (vlcmulticast) that allows
+				// to return a SDP that contains a multicast address.
+				multicast := false
+				if sc.s.MulticastIPRange != "" {
+					if q, err := gourl.ParseQuery(query); err == nil {
+						if _, ok := q["vlcmulticast"]; ok {
+							multicast = true
+						}
+					}
+				}
+
+				mediasCopy := make(media.Medias, len(stream.medias))
+				for i, medi := range stream.medias {
+					mediasCopy[i] = &media.Media{
+						Type:    medi.Type,
+						Formats: medi.Formats,
+						Control: "mediaUUID=" + stream.streamMedias[medi].uuid.String(),
+					}
+				}
+
 				if stream != nil {
-					res.Body = stream.Tracks().Write()
+					byts, _ := mediasCopy.Marshal(multicast).Marshal()
+					res.Body = byts
 				}
 			}
 
@@ -370,109 +398,72 @@ func (sc *ServerConn) handleRequest(req *base.Request) (*base.Response, error) {
 
 	case base.Announce:
 		if _, ok := sc.s.Handler.(ServerHandlerOnAnnounce); ok {
-			_, res, err := sc.handleRequestInSession(sxID, req, true)
-			return res, err
+			return sc.handleRequestInSession(sxID, req, true)
 		}
 
 	case base.Setup:
 		if _, ok := sc.s.Handler.(ServerHandlerOnSetup); ok {
-			_, res, err := sc.handleRequestInSession(sxID, req, true)
-			return res, err
+			return sc.handleRequestInSession(sxID, req, true)
 		}
 
 	case base.Play:
-		if _, ok := sc.s.Handler.(ServerHandlerOnPlay); ok {
-			ss, res, err := sc.handleRequestInSession(sxID, req, false)
-
-			if _, ok := err.(liberrors.ErrServerTCPFramesEnable); ok {
-				sc.tcpSession = ss
-				sc.tcpFrameIsRecording = false
-				sc.tcpFrameSetEnabled = true
-				return res, nil
+		if sxID != "" {
+			if _, ok := sc.s.Handler.(ServerHandlerOnPlay); ok {
+				return sc.handleRequestInSession(sxID, req, false)
 			}
-
-			return res, err
 		}
 
 	case base.Record:
-		if _, ok := sc.s.Handler.(ServerHandlerOnRecord); ok {
-			ss, res, err := sc.handleRequestInSession(sxID, req, false)
-
-			if _, ok := err.(liberrors.ErrServerTCPFramesEnable); ok {
-				sc.tcpSession = ss
-				sc.tcpFrameIsRecording = true
-				sc.tcpFrameSetEnabled = true
-				return res, nil
+		if sxID != "" {
+			if _, ok := sc.s.Handler.(ServerHandlerOnRecord); ok {
+				return sc.handleRequestInSession(sxID, req, false)
 			}
-
-			return res, err
 		}
 
 	case base.Pause:
-		if _, ok := sc.s.Handler.(ServerHandlerOnPause); ok {
-			_, res, err := sc.handleRequestInSession(sxID, req, false)
-
-			if _, ok := err.(liberrors.ErrServerTCPFramesDisable); ok {
-				sc.tcpFrameSetEnabled = false
-				return res, nil
+		if sxID != "" {
+			if _, ok := sc.s.Handler.(ServerHandlerOnPause); ok {
+				return sc.handleRequestInSession(sxID, req, false)
 			}
-
-			return res, err
 		}
 
 	case base.Teardown:
-		_, res, err := sc.handleRequestInSession(sxID, req, false)
-		return res, err
-
-	case base.GetParameter:
-		// handle request in session
 		if sxID != "" {
-			_, res, err := sc.handleRequestInSession(sxID, req, false)
-			return res, err
+			return sc.handleRequestInSession(sxID, req, false)
 		}
 
-		// handle request here
+	case base.GetParameter:
+		if sxID != "" {
+			return sc.handleRequestInSession(sxID, req, false)
+		}
+
 		if h, ok := sc.s.Handler.(ServerHandlerOnGetParameter); ok {
-			pathAndQuery, ok := req.URL.RTSPPathAndQuery()
-			if !ok {
-				return &base.Response{
-					StatusCode: base.StatusBadRequest,
-				}, liberrors.ErrServerInvalidPath{}
-			}
-
-			path, query := base.PathSplitQuery(pathAndQuery)
-
 			return h.OnGetParameter(&ServerHandlerOnGetParameterCtx{
-				Conn:  sc,
-				Req:   req,
-				Path:  path,
-				Query: query,
+				Conn:    sc,
+				Request: req,
+				Path:    path,
+				Query:   query,
 			})
 		}
 
 	case base.SetParameter:
+		if sxID != "" {
+			return sc.handleRequestInSession(sxID, req, false)
+		}
+
 		if h, ok := sc.s.Handler.(ServerHandlerOnSetParameter); ok {
-			pathAndQuery, ok := req.URL.RTSPPathAndQuery()
-			if !ok {
-				return &base.Response{
-					StatusCode: base.StatusBadRequest,
-				}, liberrors.ErrServerInvalidPath{}
-			}
-
-			path, query := base.PathSplitQuery(pathAndQuery)
-
 			return h.OnSetParameter(&ServerHandlerOnSetParameterCtx{
-				Conn:  sc,
-				Req:   req,
-				Path:  path,
-				Query: query,
+				Conn:    sc,
+				Request: req,
+				Path:    path,
+				Query:   query,
 			})
 		}
 	}
 
 	return &base.Response{
-		StatusCode: base.StatusBadRequest,
-	}, liberrors.ErrServerUnhandledRequest{Req: req}
+		StatusCode: base.StatusNotImplemented,
+	}, nil
 }
 
 func (sc *ServerConn) handleRequestOuter(req *base.Request) error {
@@ -492,57 +483,14 @@ func (sc *ServerConn) handleRequestOuter(req *base.Request) error {
 	}
 
 	// add server
-	res.Header["Server"] = base.HeaderValue{"gortsplib"}
+	res.Header["Server"] = base.HeaderValue{"rtsp-engine"}
 
 	if h, ok := sc.s.Handler.(ServerHandlerOnResponse); ok {
 		h.OnResponse(sc, res)
 	}
 
-	switch {
-	case sc.tcpFrameSetEnabled != sc.tcpFrameEnabled:
-		sc.tcpFrameEnabled = sc.tcpFrameSetEnabled
-
-		// write response before frames
-		sc.nconn.SetWriteDeadline(time.Now().Add(sc.s.WriteTimeout))
-		res.Write(sc.bw)
-
-		if sc.tcpFrameEnabled {
-			if sc.tcpFrameIsRecording {
-				sc.tcpFrameTimeout = true
-				sc.tcpFrameBuffer = multibuffer.New(uint64(sc.s.ReadBufferCount), uint64(sc.s.ReadBufferSize))
-			} else {
-				// when playing, tcpFrameBuffer is only used to receive RTCP receiver reports,
-				// that are much smaller than RTP packets and are sent at a fixed interval
-				// (about 2 frames every 10 secs).
-				// decrease RAM consumption by allocating less buffers.
-				sc.tcpFrameBuffer = multibuffer.New(8, uint64(sc.s.ReadBufferSize))
-			}
-
-			// start background write
-			sc.tcpFrameBackgroundWriteDone = make(chan struct{})
-			go sc.tcpFrameBackgroundWrite()
-
-		} else {
-			if sc.tcpFrameIsRecording {
-				sc.tcpFrameTimeout = false
-				sc.nconn.SetReadDeadline(time.Time{})
-			}
-
-			sc.tcpFrameEnabled = false
-			sc.tcpFrameWriteBuffer.Close()
-			<-sc.tcpFrameBackgroundWriteDone
-			sc.tcpFrameWriteBuffer.Reset()
-
-			sc.tcpFrameBuffer = nil
-		}
-
-	case sc.tcpFrameEnabled: // write to background write
-		sc.tcpFrameWriteBuffer.Push(res)
-
-	default: // write directly
-		sc.nconn.SetWriteDeadline(time.Now().Add(sc.s.WriteTimeout))
-		res.Write(sc.bw)
-	}
+	sc.nconn.SetWriteDeadline(time.Now().Add(sc.s.WriteTimeout))
+	sc.conn.WriteResponse(res)
 
 	return err
 }
@@ -551,29 +499,41 @@ func (sc *ServerConn) handleRequestInSession(
 	sxID string,
 	req *base.Request,
 	create bool,
-) (*ServerSession, *base.Response, error) {
-	// if the session is already linked to this conn, communicate directly with it
-	if sxID != "" {
-		if ss, ok := sc.sessions[sxID]; ok {
-			cres := make(chan sessionRequestRes)
-			sreq := sessionRequestReq{
-				sc:     sc,
-				req:    req,
-				id:     sxID,
-				create: create,
-				res:    cres,
-			}
-
-			select {
-			case ss.request <- sreq:
-				res := <-cres
-				return ss, res.res, res.err
-
-			case <-ss.ctx.Done():
-				return nil, &base.Response{
+) (*base.Response, error) {
+	// handle directly in Session
+	if sc.session != nil {
+		// session ID is optional in SETUP and ANNOUNCE requests, since
+		// client may not have received the session ID yet due to multiple reasons:
+		// * requests can be retries after code 301
+		// * SETUP requests comes after ANNOUNCE response, that don't contain the session ID
+		if sxID != "" {
+			// the connection can't communicate with two sessions at once.
+			if sxID != sc.session.secretID {
+				return &base.Response{
 					StatusCode: base.StatusBadRequest,
-				}, liberrors.ErrServerTerminated{}
+				}, liberrors.ErrServerLinkedToOtherSession{}
 			}
+		}
+
+		cres := make(chan sessionRequestRes)
+		sreq := sessionRequestReq{
+			sc:     sc,
+			req:    req,
+			id:     sxID,
+			create: create,
+			res:    cres,
+		}
+
+		select {
+		case sc.session.request <- sreq:
+			res := <-cres
+			sc.session = res.ss
+			return res.res, res.err
+
+		case <-sc.session.ctx.Done():
+			return &base.Response{
+				StatusCode: base.StatusBadRequest,
+			}, liberrors.ErrServerTerminated{}
 		}
 	}
 
@@ -590,36 +550,12 @@ func (sc *ServerConn) handleRequestInSession(
 	select {
 	case sc.s.sessionRequest <- sreq:
 		res := <-cres
-		if res.ss != nil {
-			sc.sessions[res.ss.secretID] = res.ss
-		}
-
-		return res.ss, res.res, res.err
+		sc.session = res.ss
+		return res.res, res.err
 
 	case <-sc.s.ctx.Done():
-		return nil, &base.Response{
+		return &base.Response{
 			StatusCode: base.StatusBadRequest,
 		}, liberrors.ErrServerTerminated{}
-	}
-}
-
-func (sc *ServerConn) tcpFrameBackgroundWrite() {
-	defer close(sc.tcpFrameBackgroundWriteDone)
-
-	for {
-		what, ok := sc.tcpFrameWriteBuffer.Pull()
-		if !ok {
-			return
-		}
-
-		switch w := what.(type) {
-		case *base.InterleavedFrame:
-			sc.nconn.SetWriteDeadline(time.Now().Add(sc.s.WriteTimeout))
-			w.Write(sc.bw)
-
-		case *base.Response:
-			sc.nconn.SetWriteDeadline(time.Now().Add(sc.s.WriteTimeout))
-			w.Write(sc.bw)
-		}
 	}
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
 )
 
 var casesTransport = []struct {
@@ -20,9 +20,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP;unicast;client_port=3456-3457;mode="PLAY"`},
 		base.HeaderValue{`RTP/AVP;unicast;client_port=3456-3457;mode=play`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			ClientPorts: &[2]int{3456, 3457},
@@ -37,9 +37,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP/UDP;unicast;client_port=3056-3057;server_port=5000-5001`},
 		base.HeaderValue{`RTP/AVP;unicast;client_port=3056-3057;server_port=5000-5001`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			ClientPorts: &[2]int{3056, 3057},
@@ -51,9 +51,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP;multicast;destination=225.219.201.15;port=7000-7001;ttl=127`},
 		base.HeaderValue{`RTP/AVP;multicast;destination=225.219.201.15;port=7000-7001;ttl=127`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryMulticast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryMulticast
 				return &v
 			}(),
 			Destination: func() *net.IP {
@@ -72,7 +72,7 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP/TCP;interleaved=0-1`},
 		base.HeaderValue{`RTP/AVP/TCP;interleaved=0-1`},
 		Transport{
-			Protocol:       base.StreamProtocolTCP,
+			Protocol:       TransportProtocolTCP,
 			InterleavedIDs: &[2]int{0, 1},
 		},
 	},
@@ -81,9 +81,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP/UDP;unicast;server_port=8052;client_port=14186;ssrc=0B6020AD;mode=PLAY`},
 		base.HeaderValue{`RTP/AVP;unicast;client_port=14186-14187;server_port=8052-8053;ssrc=0B6020AD;mode=play`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			Mode: func() *TransportMode {
@@ -100,12 +100,12 @@ var casesTransport = []struct {
 	},
 	{
 		"udp record response with receive",
-		base.HeaderValue{`RTP/AVP/UDP;unicast;mode=receive;source=localhost;client_port=14186-14187;server_port=5000-5001`},
-		base.HeaderValue{`RTP/AVP;unicast;client_port=14186-14187;server_port=5000-5001;mode=record`},
+		base.HeaderValue{`RTP/AVP/UDP;unicast;mode=receive;source=127.0.0.1;client_port=14186-14187;server_port=5000-5001`},
+		base.HeaderValue{`RTP/AVP;unicast;source=127.0.0.1;client_port=14186-14187;server_port=5000-5001;mode=record`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			Mode: func() *TransportMode {
@@ -114,6 +114,10 @@ var casesTransport = []struct {
 			}(),
 			ClientPorts: &[2]int{14186, 14187},
 			ServerPorts: &[2]int{5000, 5001},
+			Source: func() *net.IP {
+				v := net.ParseIP("127.0.0.1")
+				return &v
+			}(),
 		},
 	},
 	{
@@ -121,9 +125,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`client_port=3456-3457;RTP/AVP;mode="PLAY";unicast`},
 		base.HeaderValue{`RTP/AVP;unicast;client_port=3456-3457;mode=play`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			ClientPorts: &[2]int{3456, 3457},
@@ -138,9 +142,9 @@ var casesTransport = []struct {
 		base.HeaderValue{`RTP/AVP/UDP;unicast;client_port=14186;server_port=8052;ssrc=4317f;mode=play`},
 		base.HeaderValue{`RTP/AVP;unicast;client_port=14186-14187;server_port=8052-8053;ssrc=0004317F;mode=play`},
 		Transport{
-			Protocol: base.StreamProtocolUDP,
-			Delivery: func() *base.StreamDelivery {
-				v := base.StreamDeliveryUnicast
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
 				return &v
 			}(),
 			Mode: func() *TransportMode {
@@ -155,20 +159,95 @@ var casesTransport = []struct {
 			}(),
 		},
 	},
+	{
+		"hikvision ssrc with initial spaces",
+		base.HeaderValue{`RTP/AVP/UDP;unicast;client_port=14186;server_port=8052;ssrc= 4317f;mode=play`},
+		base.HeaderValue{`RTP/AVP;unicast;client_port=14186-14187;server_port=8052-8053;ssrc=0004317F;mode=play`},
+		Transport{
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
+				return &v
+			}(),
+			Mode: func() *TransportMode {
+				v := TransportModePlay
+				return &v
+			}(),
+			ClientPorts: &[2]int{14186, 14187},
+			ServerPorts: &[2]int{8052, 8053},
+			SSRC: func() *uint32 {
+				v := uint32(0x04317f)
+				return &v
+			}(),
+		},
+	},
+	{
+		"dahua rtsp server ssrc with initial spaces",
+		base.HeaderValue{`RTP/AVP/TCP;unicast;interleaved=0-1;ssrc=     D93FF`},
+		base.HeaderValue{`RTP/AVP/TCP;unicast;interleaved=0-1;ssrc=000D93FF`},
+		Transport{
+			Protocol: TransportProtocolTCP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
+				return &v
+			}(),
+			InterleavedIDs: &[2]int{0, 1},
+			SSRC: func() *uint32 {
+				v := uint32(0xD93FF)
+				return &v
+			}(),
+		},
+	},
+	{
+		"empty source",
+		base.HeaderValue{`RTP/AVP/UDP;unicast;source=;client_port=32560-32561;server_port=3046-3047;ssrc=45dcb578`},
+		base.HeaderValue{`RTP/AVP;unicast;client_port=32560-32561;server_port=3046-3047;ssrc=45DCB578`},
+		Transport{
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
+				return &v
+			}(),
+			SSRC: func() *uint32 {
+				v := uint32(0x45dcb578)
+				return &v
+			}(),
+			ClientPorts: &[2]int{32560, 32561},
+			ServerPorts: &[2]int{3046, 3047},
+		},
+	},
+	{
+		"invalid ssrc",
+		base.HeaderValue{`RTP/AVP;unicast;client_port=14236;source=172.16.8.2;server_port=56002;ssrc=1449463210`},
+		base.HeaderValue{`RTP/AVP;unicast;source=172.16.8.2;client_port=14236-14237;server_port=56002-56003`},
+		Transport{
+			Protocol: TransportProtocolUDP,
+			Delivery: func() *TransportDelivery {
+				v := TransportDeliveryUnicast
+				return &v
+			}(),
+			Source: func() *net.IP {
+				v := net.ParseIP("172.16.8.2")
+				return &v
+			}(),
+			ClientPorts: &[2]int{14236, 14237},
+			ServerPorts: &[2]int{56002, 56003},
+		},
+	},
 }
 
-func TestTransportRead(t *testing.T) {
+func TestTransportUnmarshal(t *testing.T) {
 	for _, ca := range casesTransport {
 		t.Run(ca.name, func(t *testing.T) {
 			var h Transport
-			err := h.Read(ca.vin)
+			err := h.Unmarshal(ca.vin)
 			require.NoError(t, err)
 			require.Equal(t, ca.h, h)
 		})
 	}
 }
 
-func TestTransportReadErrors(t *testing.T) {
+func TestTransportUnmarshalErrors(t *testing.T) {
 	for _, ca := range []struct {
 		name string
 		hv   base.HeaderValue
@@ -240,16 +319,6 @@ func TestTransportReadErrors(t *testing.T) {
 			"invalid ports (aa-14187)",
 		},
 		{
-			"invalid ssrc 1",
-			base.HeaderValue{`RTP/AVP;unicast;ssrc=zzz`},
-			"encoding/hex: invalid byte: U+007A 'z'",
-		},
-		{
-			"invalid ssrc 2",
-			base.HeaderValue{`RTP/AVP;unicast;ssrc=030A0B0C0D0E0F`},
-			"invalid SSRC",
-		},
-		{
 			"invalid mode",
 			base.HeaderValue{`RTP/AVP;unicast;mode=aa`},
 			"invalid transport mode: 'aa'",
@@ -257,16 +326,101 @@ func TestTransportReadErrors(t *testing.T) {
 	} {
 		t.Run(ca.name, func(t *testing.T) {
 			var h Transport
-			err := h.Read(ca.hv)
-			require.Equal(t, ca.err, err.Error())
+			err := h.Unmarshal(ca.hv)
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }
 
-func TestTransportWrite(t *testing.T) {
+func TestTransportMarshal(t *testing.T) {
 	for _, ca := range casesTransport {
 		t.Run(ca.name, func(t *testing.T) {
-			req := ca.h.Write()
+			req := ca.h.Marshal()
+			require.Equal(t, ca.vout, req)
+		})
+	}
+}
+
+var casesTransports = []struct {
+	name string
+	vin  base.HeaderValue
+	vout base.HeaderValue
+	h    Transports
+}{
+	{
+		"a",
+		base.HeaderValue{`RTP/AVP;unicast;client_port=3456-3457;mode="PLAY", RTP/AVP/TCP;unicast;interleaved=0-1`},
+		base.HeaderValue{`RTP/AVP;unicast;client_port=3456-3457;mode=play,RTP/AVP/TCP;unicast;interleaved=0-1`},
+		Transports{
+			{
+				Protocol: TransportProtocolUDP,
+				Delivery: func() *TransportDelivery {
+					v := TransportDeliveryUnicast
+					return &v
+				}(),
+				ClientPorts: &[2]int{3456, 3457},
+				Mode: func() *TransportMode {
+					v := TransportModePlay
+					return &v
+				}(),
+			},
+			Transport{
+				Protocol: TransportProtocolTCP,
+				Delivery: func() *TransportDelivery {
+					v := TransportDeliveryUnicast
+					return &v
+				}(),
+				InterleavedIDs: &[2]int{0, 1},
+			},
+		},
+	},
+}
+
+func TestTransportsUnmarshal(t *testing.T) {
+	for _, ca := range casesTransports {
+		t.Run(ca.name, func(t *testing.T) {
+			var h Transports
+			err := h.Unmarshal(ca.vin)
+			require.NoError(t, err)
+			require.Equal(t, ca.h, h)
+		})
+	}
+}
+
+func TestTransportsUnmarshalErrors(t *testing.T) {
+	for _, ca := range []struct {
+		name string
+		hv   base.HeaderValue
+		err  string
+	}{
+		{
+			"empty",
+			base.HeaderValue{},
+			"value not provided",
+		},
+		{
+			"2 values",
+			base.HeaderValue{"a", "b"},
+			"value provided multiple times ([a b])",
+		},
+		{
+			"invalid",
+			base.HeaderValue{"aasd"},
+			"protocol not found (aasd)",
+		},
+	} {
+		t.Run(ca.name, func(t *testing.T) {
+			var h Transports
+			err := h.Unmarshal(ca.hv)
+			require.EqualError(t, err, ca.err)
+		})
+	}
+}
+
+func TestTransportsMarshal(t *testing.T) {
+	for _, ca := range casesTransports {
+		t.Run(ca.name, func(t *testing.T) {
+			req := ca.h.Marshal()
 			require.Equal(t, ca.vout, req)
 		})
 	}

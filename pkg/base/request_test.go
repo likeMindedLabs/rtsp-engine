@@ -6,7 +6,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/url"
 )
+
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
 
 var casesRequest = []struct {
 	name string
@@ -143,19 +153,6 @@ func TestRequestRead(t *testing.T) {
 	}
 }
 
-func TestRequestWrite(t *testing.T) {
-	for _, ca := range casesRequest {
-		t.Run(ca.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			bw := bufio.NewWriter(&buf)
-			err := ca.req.Write(bw)
-			require.NoError(t, err)
-			// do NOT call flush(), write() must have already done it
-			require.Equal(t, ca.byts, buf.Bytes())
-		})
-	}
-}
-
 func TestRequestReadErrors(t *testing.T) {
 	for _, ca := range []struct {
 		name string
@@ -200,7 +197,7 @@ func TestRequestReadErrors(t *testing.T) {
 		{
 			"empty protocol",
 			[]byte("GET rtsp://testing123 \r\n"),
-			"expected 'RTSP/1.0', got ''",
+			"expected 'RTSP/1.0', got []",
 		},
 		{
 			"invalid URL",
@@ -210,7 +207,7 @@ func TestRequestReadErrors(t *testing.T) {
 		{
 			"invalid protocol",
 			[]byte("GET rtsp://testing123 RTSP/2.0\r\n"),
-			"expected 'RTSP/1.0', got 'RTSP/2.0'",
+			"expected 'RTSP/1.0', got [82 84 83 80 47 50 46 48]",
 		},
 		{
 			"invalid header",
@@ -226,67 +223,19 @@ func TestRequestReadErrors(t *testing.T) {
 		t.Run(ca.name, func(t *testing.T) {
 			var req Request
 			err := req.Read(bufio.NewReader(bytes.NewBuffer(ca.byts)))
-			require.Equal(t, ca.err, err.Error())
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }
 
-func TestRequestWriteErrors(t *testing.T) {
-	for _, ca := range []struct {
-		name string
-		cap  int
-	}{
-		{
-			"first line",
-			3,
-		},
-		{
-			"header",
-			53,
-		},
-		{
-			"body",
-			80,
-		},
-	} {
+func TestRequestMarshal(t *testing.T) {
+	for _, ca := range casesRequest {
 		t.Run(ca.name, func(t *testing.T) {
-			bw := bufio.NewWriterSize(&limitedBuffer{cap: ca.cap}, 1)
-			err := Request{
-				Method: "ANNOUNCE",
-				URL:    mustParseURL("rtsp://example.com/media.mp4"),
-				Header: Header{
-					"CSeq": HeaderValue{"7"},
-				},
-				Body: []byte("abc"),
-			}.Write(bw)
-			require.Equal(t, "capacity reached", err.Error())
+			buf, err := ca.req.Marshal()
+			require.NoError(t, err)
+			require.Equal(t, ca.byts, buf)
 		})
 	}
-}
-
-func TestRequestReadIgnoreFrames(t *testing.T) {
-	byts := []byte{0x24, 0x6, 0x0, 0x4, 0x1, 0x2, 0x3, 0x4}
-	byts = append(byts, []byte("OPTIONS rtsp://example.com/media.mp4 RTSP/1.0\r\n"+
-		"CSeq: 1\r\n"+
-		"Proxy-Require: gzipped-messages\r\n"+
-		"Require: implicit-play\r\n"+
-		"\r\n")...)
-
-	rb := bufio.NewReader(bytes.NewBuffer(byts))
-	buf := make([]byte, 10)
-	var req Request
-	err := req.ReadIgnoreFrames(rb, buf)
-	require.NoError(t, err)
-}
-
-func TestRequestReadIgnoreFramesErrors(t *testing.T) {
-	byts := []byte{0x25}
-
-	rb := bufio.NewReader(bytes.NewBuffer(byts))
-	buf := make([]byte, 10)
-	var req Request
-	err := req.ReadIgnoreFrames(rb, buf)
-	require.Equal(t, "EOF", err.Error())
 }
 
 func TestRequestString(t *testing.T) {

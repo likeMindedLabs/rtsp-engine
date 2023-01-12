@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/likeMindedLabs/rtsp-engine/pkg/base"
+	"github.com/likeMindedLabs/rtsp-engine/v2/pkg/base"
 )
 
 func TestSenderErrors(t *testing.T) {
@@ -47,7 +47,7 @@ func TestSenderErrors(t *testing.T) {
 	} {
 		t.Run(ca.name, func(t *testing.T) {
 			_, err := NewSender(ca.hv, "myuser", "mypass")
-			require.Equal(t, ca.err, err.Error())
+			require.EqualError(t, err, ca.err)
 		})
 	}
 }
