@@ -12,7 +12,7 @@ import (
 const (
 	rtspProtocol10           = "RTSP/1.0"
 	requestMaxMethodLength   = 64
-	requestMaxURLLength      = 2048
+	requestMaxURLLength      = 4096
 	requestMaxProtocolLength = 64
 )
 
